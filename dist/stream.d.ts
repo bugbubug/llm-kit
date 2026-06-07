@@ -42,6 +42,11 @@ export declare function withRetry<T>(fn: () => Promise<T>, hooks: ProviderHooks)
  *
  * `req` is accepted (and ignored here) so a future specialization can branch on
  * the request without changing the seam's call sites; today it is a pure fold.
+ *
+ * generate() is success-or-throw: streamChat() stays data-only and may yield a
+ * recoverable upstream error as a `{ error }` chunk; the non-streaming generate()
+ * has no stream to carry that, so a non-empty `error` chunk is rethrown as an
+ * `upstream_error` LlmKitError instead of silently returning partial/empty text.
  */
 export declare function aggregateStream(stream: AsyncIterable<StreamChunk>, _req?: unknown): Promise<ChatResponse>;
 //# sourceMappingURL=stream.d.ts.map

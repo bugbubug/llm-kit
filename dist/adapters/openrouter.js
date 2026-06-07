@@ -56,8 +56,16 @@ export function createOpenRouterProvider(ctx, opts) {
         return { text, ...(usage ? { usage } : {}) };
     }
     async function* streamChat(req) {
-        const r = await generate(req);
-        yield { token: r.text };
+        // streamChat MUST NOT throw a recoverable upstream error: generate() is the
+        // non-streaming primitive and throws LlmKitError on a non-ok HTTP response,
+        // so we catch it here and deliver it as a StreamChunk.error data chunk.
+        try {
+            const r = await generate(req);
+            yield { token: r.text };
+        }
+        catch (e) {
+            yield { error: e instanceof Error ? e.message : String(e) };
+        }
     }
     return { streamChat, generate };
 }

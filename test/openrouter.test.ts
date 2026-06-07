@@ -139,6 +139,22 @@ describe("openrouter streamChat — single-chunk wrap", () => {
     expect(chunks.length).toBe(1);
     expect(chunks[0]?.token).toBe("whole reply");
   });
+
+  test("streamChat surfaces a non-ok upstream as ONE error chunk and does NOT reject", async () => {
+    const { fetchImpl } = fakeFetch({ error: "rate limited" }, false);
+    const gw = createOpenRouterProvider(ctx(), { fetchImpl });
+    const chunks: StreamChunk[] = [];
+    // The async iteration itself must not reject — the error is DATA, not a throw.
+    await expect(
+      (async () => {
+        for await (const c of gw.streamChat(chatReq())) chunks.push(c);
+      })(),
+    ).resolves.toBeUndefined();
+    expect(chunks.length).toBe(1);
+    expect(chunks[0]?.error).toBeDefined();
+    expect(chunks[0]?.error).toMatch(/openrouter chat failed 500/);
+    expect(chunks[0]?.token).toBeUndefined();
+  });
 });
 
 describe("openrouter — error path", () => {

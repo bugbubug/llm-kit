@@ -56,11 +56,14 @@ export const createCloudflareProvider = (ctx, hooks) => {
         collectLogPayload: false,
     };
     // Bound as a local so `generate` can call it without relying on `this`
-    // (the provider may be destructured by a consumer).
-    const streamChat = (req) => {
+    // (the provider may be destructured by a consumer). An async generator so the
+    // CONNECT phase (await ai.run) lives INSIDE the stream: a rejecting connect is
+    // delivered as a recoverable {error} chunk, never thrown out of streamChat.
+    const streamChat = async function* (req) {
         const r = hooks.rewriteChat?.(req, ctx) ?? req; // channel quirks: max_tokens default, etc.
-        const rawFrames = (async function* () {
-            const stream = (await ai.run(r.model || ctx.chatModel, {
+        let stream;
+        try {
+            stream = (await ai.run(r.model || ctx.chatModel, {
                 messages: toWorkersAiMessages(r),
                 stream: true,
                 max_tokens: r.maxTokens,
@@ -68,17 +71,27 @@ export const createCloudflareProvider = (ctx, hooks) => {
                 ...(r.responseJson ? { response_format: { type: "json_object" } } : {}),
                 ...(hooks.extraChatInput?.(r, ctx) ?? {}),
             }, { gateway }));
+        }
+        catch (e) {
+            // CONNECT-phase failure is recoverable DATA on the streaming path: yield it
+            // as an {error} chunk and stop, never let it throw out of streamChat.
+            yield { error: e instanceof Error ? e.message : String(e) };
+            return;
+        }
+        const rawFrames = (async function* () {
             try {
                 yield* parseSseFrames(stream);
             }
             finally {
-                // Release the underlying fetch when the consumer breaks out early.
-                stream.cancel();
+                // Release the underlying fetch when the consumer breaks out early. A
+                // rejecting cancel (errored/aborted stream) is swallowed so it can never
+                // escape as an unhandled rejection (which can terminate a workerd request).
+                void stream.cancel().catch(() => { });
             }
         })();
         // hooks.normalizeChunk extracts the token (native {response} vs compat
         // choices[0].delta.content); recoverable upstream errors surface as {error} chunks.
-        return normalizeStream(rawFrames, hooks);
+        yield* normalizeStream(rawFrames, hooks);
     };
     const provider = {
         name: "cloudflare",

@@ -49,6 +49,18 @@ function fakeTransport(resp: GenerateContentResponse) {
   return { transport, calls };
 }
 
+/** A transport that REJECTS — simulates a non-ok upstream HTTP response. */
+function rejectingTransport(err: Error) {
+  const calls: Array<{ model: string; body: GenerateContentBody }> = [];
+  const transport: GeminiTransport = {
+    async generateContent(model, body) {
+      calls.push({ model, body: body as GenerateContentBody });
+      throw err;
+    },
+  };
+  return { transport, calls };
+}
+
 function textResp(text: string, usage?: Record<string, number>): GenerateContentResponse {
   return {
     candidates: [{ content: { parts: [{ text }] } }],
@@ -156,6 +168,24 @@ describe("gemini streamChat — single-chunk wrap", () => {
     // generate + streamChat → two transport calls total (one each).
     expect(calls.length).toBe(1);
     expect(await collectTokens(gw.streamChat(chatReq()))).toBe("the whole reply");
+  });
+
+  test("upstream reject → streamChat yields ONE error chunk and does NOT throw; generate() still rejects", async () => {
+    const upstream = new Error("upstream_error: 503 Service Unavailable");
+    const { transport } = rejectingTransport(upstream);
+    const gw = createGeminiProvider(CTX, { transport });
+
+    // streamChat MUST NOT reject for a recoverable upstream fault — it delivers
+    // the error as a single DATA chunk (StreamChunk.error), no token.
+    const chunks: StreamChunk[] = [];
+    for await (const c of gw.streamChat(chatReq())) chunks.push(c);
+    expect(chunks.length).toBe(1);
+    expect(chunks[0]?.error).toBeDefined();
+    expect(chunks[0]?.error).toBe("upstream_error: 503 Service Unavailable");
+    expect(chunks[0]?.token).toBeUndefined();
+
+    // The non-streaming primitive is unchanged: generate() STILL throws.
+    await expect(gw.generate(chatReq())).rejects.toThrow(upstream);
   });
 });
 

@@ -1,3 +1,4 @@
+import { LlmKitError } from "./errors.js";
 /** Default: request identity, a string frame is the token (passthrough), no retry. */
 export const defaultHooks = {};
 /**
@@ -46,10 +47,17 @@ export async function withRetry(fn, hooks) {
  *
  * `req` is accepted (and ignored here) so a future specialization can branch on
  * the request without changing the seam's call sites; today it is a pure fold.
+ *
+ * generate() is success-or-throw: streamChat() stays data-only and may yield a
+ * recoverable upstream error as a `{ error }` chunk; the non-streaming generate()
+ * has no stream to carry that, so a non-empty `error` chunk is rethrown as an
+ * `upstream_error` LlmKitError instead of silently returning partial/empty text.
  */
 export async function aggregateStream(stream, _req) {
     const parts = [];
     for await (const chunk of stream) {
+        if (chunk.error)
+            throw new LlmKitError("upstream_error", chunk.error);
         if (chunk.token)
             parts.push(chunk.token);
     }

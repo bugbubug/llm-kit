@@ -251,6 +251,85 @@ describe("cloudflare provider — generate aggregate seam", () => {
   });
 });
 
+describe("cloudflare provider — streaming connect-fault contract (#2/#4)", () => {
+  test("[inv45] ai.run rejecting at CONNECT → ONE {error} chunk, streamChat does NOT throw", async () => {
+    const ai: AiBinding = {
+      run: async () => {
+        throw new Error("binding boom");
+      },
+    };
+    const provider = createCloudflareProvider(ctx({ ai }), cloudflareHooks);
+    const chunks: StreamChunk[] = [];
+    // Must NOT throw — the connect rejection is delivered as DATA.
+    await expect(
+      (async () => {
+        for await (const c of provider.streamChat(chatReq())) chunks.push(c);
+      })(),
+    ).resolves.toBeUndefined();
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.error).toBeDefined();
+    expect(chunks[0]?.error).toContain("binding boom");
+    expect(chunks[0]?.token).toBeUndefined();
+  });
+
+  test("[inv46] generate() SURFACES the connect-fault as LlmKitError('upstream_error')", async () => {
+    const ai: AiBinding = {
+      run: async () => {
+        throw new Error("binding boom");
+      },
+    };
+    const provider = createCloudflareProvider(ctx({ ai }), cloudflareHooks);
+    let err: unknown;
+    try {
+      await provider.generate(chatReq());
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(LlmKitError);
+    expect((err as LlmKitError).code).toBe("upstream_error");
+    expect((err as LlmKitError).message).toContain("binding boom");
+  });
+
+  test("[inv47] non-Error rejection is stringified into the {error} chunk", async () => {
+    const ai: AiBinding = {
+      run: async () => {
+        throw "plain-string-fault";
+      },
+    };
+    const provider = createCloudflareProvider(ctx({ ai }), cloudflareHooks);
+    const chunks: StreamChunk[] = [];
+    for await (const c of provider.streamChat(chatReq())) chunks.push(c);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.error).toBe("plain-string-fault");
+  });
+
+  test("[inv48] early break out of streamChat does NOT throw (cancel swallowed)", async () => {
+    let cancelled = false;
+    // A stream whose cancel() REJECTS — the finally must swallow it so breaking
+    // out early can never surface an unhandled rejection.
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"response":"a"}\n\n'));
+      },
+      cancel() {
+        cancelled = true;
+        return Promise.reject(new Error("cancel boom"));
+      },
+    });
+    const ai: AiBinding = { run: async () => stream };
+    const provider = createCloudflareProvider(ctx({ ai }), cloudflareHooks);
+    await expect(
+      (async () => {
+        for await (const c of provider.streamChat(chatReq())) {
+          void c;
+          break; // trigger generator return → finally → stream.cancel()
+        }
+      })(),
+    ).resolves.toBeUndefined();
+    expect(cancelled).toBe(true);
+  });
+});
+
 describe("cloudflareHooks — pure functions", () => {
   test("[inv41] rewriteChat sets default max_tokens 1536; preserves explicit value", () => {
     expect(

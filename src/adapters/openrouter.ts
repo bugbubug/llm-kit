@@ -104,8 +104,15 @@ export function createOpenRouterProvider(
   }
 
   async function* streamChat(req: ChatRequest): AsyncIterable<StreamChunk> {
-    const r = await generate(req);
-    yield { token: r.text } satisfies StreamChunk;
+    // streamChat MUST NOT throw a recoverable upstream error: generate() is the
+    // non-streaming primitive and throws LlmKitError on a non-ok HTTP response,
+    // so we catch it here and deliver it as a StreamChunk.error data chunk.
+    try {
+      const r = await generate(req);
+      yield { token: r.text } satisfies StreamChunk;
+    } catch (e) {
+      yield { error: e instanceof Error ? e.message : String(e) } satisfies StreamChunk;
+    }
   }
 
   return { streamChat, generate };

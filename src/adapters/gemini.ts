@@ -91,8 +91,19 @@ export function createGeminiProvider(
   async function* streamChat(req: ChatRequest): AsyncIterable<StreamChunk> {
     // Native API is non-streaming → generate(), then emit the whole text as ONE
     // chunk (a valid single-chunk stream; ChatModel keeps both methods).
-    const r = await generate(req);
-    yield { token: r.text } satisfies StreamChunk;
+    // generate() may throw a recoverable upstream fault (transport raises
+    // LlmKitError("upstream_error") on a non-ok HTTP response). On the streaming
+    // path that is DATA, not a throw: deliver it as a StreamChunk.error chunk so
+    // streamChat NEVER rejects for a recoverable upstream failure. generate()
+    // itself (the non-streaming primitive) still throws — unchanged.
+    try {
+      const r = await generate(req);
+      yield { token: r.text } satisfies StreamChunk;
+    } catch (e) {
+      yield {
+        error: e instanceof Error ? e.message : String(e),
+      } satisfies StreamChunk;
+    }
   }
 
   async function analyze(req: VisionRequest): Promise<VisionResponse> {
