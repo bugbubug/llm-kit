@@ -120,6 +120,16 @@ export function createMockProvider(arg) {
         name: "mock",
         streamChat,
         generate(req) {
+            // v0.2.1 (ADDITIVE): non-streaming consumers get the resolver fixture
+            // VERBATIM (no word-split) + a neutral `usage:{mock:1}` marker, so
+            // byte-exact fixture content (internal multi-spaces / newlines / JSON
+            // formatting) survives `generate()` — `streamChat` still chunks word-by-word
+            // for streaming consumers. Without a resolved fixture, the echo path is
+            // unchanged (aggregate of streamChat), so existing behavior/tests stay green.
+            const fixture = req.mockRef !== undefined ? resolver?.text?.(req.mockRef) : undefined;
+            if (typeof fixture === "string") {
+                return Promise.resolve({ text: fixture, usage: { mock: 1 } });
+            }
             return aggregateStream(streamChat(req), req);
         },
         async embed(req) {

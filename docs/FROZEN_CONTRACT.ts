@@ -1,5 +1,9 @@
 /**
- * @bugbubug/llm-kit — FROZEN PUBLIC CONTRACT (v0.2.0).
+ * @bugbubug/llm-kit — FROZEN PUBLIC CONTRACT (v0.2.1).
+ *
+ * v0.2.1 keeps the v0.2.0 export surface IDENTICAL — it is a behavior-only
+ * additive change (the mock's generate() returns resolver fixtures verbatim +
+ * a usage:{mock:1} marker). The surface mirror below is unchanged.
  *
  * v0.2.0 is strictly ADDITIVE over v0.1.0 (habibi pins v0.1.0 by immutable git
  * tag and is unaffected): new OPTIONAL IR fields, new generic capability types

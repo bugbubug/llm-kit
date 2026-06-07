@@ -38,6 +38,12 @@ its own contracts at the boundary.
 > business policy: `mockRef` is an OPAQUE string (not `{productId,tier,key}`),
 > the Gemini adapter never asserts it is "the vision provider", and tier→thinking
 > mapping lives only in the consumer.
+>
+> **v0.2.1 (additive, behavior-only — no surface change):** the mock's
+> `generate()` returns a resolved `FixtureResolver` fixture **VERBATIM** + a
+> `usage:{mock:1}` marker, so non-streaming consumers get byte-exact fixture
+> content (internal whitespace / newlines / JSON formatting survive). `streamChat`
+> still chunks the fixture word-by-word; the no-fixture echo path is unchanged.
 
 Behavior is **preserved from habibi**, not redesigned. The source files name the
 habibi originals they extract.
@@ -56,7 +62,7 @@ src/
   stream.ts         defaultHooks, normalizeStream, withRetry, aggregateStream (the generate seam)
   egress.ts         assertGatewayEgress, isAllowedGatewayUrl, DEFAULT_CF_GATEWAY_PREFIXES (OPT-IN)
   embedding.ts      featureHashEmbed (deterministic FNV-1a feature hash)
-  mock.ts           createMockProvider (union number|MockOptions, injectable FixtureResolver) + createMockVisionModel/createMockImageModel
+  mock.ts           createMockProvider (union number|MockOptions, injectable FixtureResolver; v0.2.1 generate() returns fixtures VERBATIM+usage) + createMockVisionModel/createMockImageModel
   registry.ts       v0.2.0 createProviderRegistry — pure by-NAME register/create (NO productId/tier/route/fallback)
   zod.ts            OPTIONAL non-frozen "@bugbubug/llm-kit/zod" subpath (the ONLY file importing zod; v0.2.0 adds the reserved zod/v4 toProviderJsonSchema)
   adapters/
@@ -71,7 +77,7 @@ src/
     memory-token-cache.ts v0.2.0 MemoryTokenCache (pure in-memory TokenCache default)
     index.ts             adapters barrel — the "./adapters/cloudflare" subpath (re-exports the new factories + MemoryTokenCache)
 test/               vitest: mock, cloudflare (+ SSE + hooks), egress, contract (surface + purity), gemini, openrouter, registry
-docs/               FROZEN_CONTRACT.ts (authoritative mirror, v0.2.0), API.md
+docs/               FROZEN_CONTRACT.ts (authoritative mirror, v0.2.1 — surface == v0.2.0), API.md
 ```
 
 The v0.2.0 adapter factories (`createGeminiProvider`/`createGeminiImageProvider`/
@@ -127,9 +133,13 @@ frozen value surface.
    habibi original (named in each file's header) and the invariant list in the
    build spec. The two adaptations to habibi: the IR is parts-based multimodal
    (text = a single `{text}` part) and `system` is a separate field (not a role).
-6. **Streaming-first.** `streamChat` is the core primitive; `generate` is the
-   real "aggregate `streamChat` into one string" seam (`aggregateStream`).
-   Specialize it later behind the same signature without changing call sites.
+6. **`ChatModel` keeps BOTH `streamChat` and `generate`.** In the streaming
+   adapters (the original Cloudflare, the mock) `streamChat` is the primitive and
+   `generate` aggregates it (`aggregateStream`). In the v0.2.0 non-streaming
+   adapters (Gemini / OpenRouter / `createCloudflareNonStreamingProvider`)
+   `generate` is the native primitive (one JSON call, no SSE) and `streamChat` is a
+   single-chunk wrapper. Either method may be the "real" one; the other is derived —
+   same signatures, no call-site change.
 
 ## How a consumer wires it
 

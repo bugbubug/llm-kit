@@ -1,7 +1,7 @@
 {
   "name": "@bugbubug/llm-kit",
-  "version": "0.2.0",
-  "description": "Pure, framework/runtime-agnostic LLM gateway SDK — contracts + egress adapters only (Cloudflare Workers AI via AI Gateway + deterministic mock). Streaming-first chat (streamChat/generate) + embed. NO routing, NO product policy.",
+  "version": "0.2.1",
+  "description": "Pure, framework/runtime-agnostic LLM gateway SDK — contracts + egress adapters only (Cloudflare Workers AI, Gemini dual-channel [Vertex/Developer], OpenRouter + deterministic configurable mock). Streaming AND native non-streaming chat (streamChat/generate) + vision + image-gen + embed + thinking. NO routing, NO product policy.",
   "license": "MIT",
   "author": "bugbubug",
   "type": "module",

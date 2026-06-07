@@ -4,11 +4,14 @@ import type { FixtureResolver } from "./types.js";
  * v0.2.0 (ADDITIVE). Options for the configurable mock. The injectable
  * `resolver` is a business-NEUTRAL seam: when a ChatRequest carries the OPTIONAL
  * opaque `mockRef` AND `resolver.text(ref)` returns a string, that fixture text
- * is streamed (word-by-word) INSTEAD of the shipped echo; otherwise the SDK
- * falls back to its content-free echo/recalledMemories logic. The SDK ships NO
- * fixture content. `profile` is an opaque string the resolver interprets (the
- * SDK does NOT enumerate profiles). `latencyMs` is reserved/no-op (kept for
- * future deterministic latency simulation; the mock stays synchronous-fast).
+ * is served INSTEAD of the shipped echo — `streamChat` yields it word-by-word
+ * (streaming consumers), while `generate` (v0.2.1) returns it VERBATIM + a
+ * `usage:{mock:1}` marker (non-streaming consumers get byte-exact fixture
+ * content). Otherwise the SDK falls back to its content-free
+ * echo/recalledMemories logic. The SDK ships NO fixture content. `profile` is an
+ * opaque string the resolver interprets (the SDK does NOT enumerate profiles).
+ * `latencyMs` is reserved/no-op (kept for future deterministic latency
+ * simulation; the mock stays synchronous-fast).
  */
 export interface MockOptions {
     embeddingDims: number;

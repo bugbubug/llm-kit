@@ -230,6 +230,36 @@ describe("mock generate — aggregate seam", () => {
     expect(text).toBe(streamed);
     expect(text).toContain("I had a rough day at work");
   });
+
+  test("[inv29b] v0.2.1: generate() returns a resolver fixture VERBATIM + usage:{mock:1}", async () => {
+    // A fixture with internal multi-spaces + a newline + pretty JSON — the exact
+    // content a word-splitting streamChat aggregate would corrupt. generate() must
+    // return it byte-for-byte so non-streaming consumers can JSON.parse it.
+    const fixtureJson = '{\n  "reading": "deep  calm",\n  "n": 2\n}';
+    const resolver: FixtureResolver = {
+      text: (ref) => (ref === "fx-verbatim" ? fixtureJson : undefined),
+    };
+    const gw = createMockProvider({ embeddingDims: DIMS, resolver });
+    const req: ChatRequest = {
+      model: "mock-chat",
+      mockRef: "fx-verbatim",
+      messages: [{ role: "user", parts: [{ text: "ignored" }] }],
+    };
+    const res = await gw.generate(req);
+    expect(res.text).toBe(fixtureJson); // byte-exact, NOT whitespace-collapsed
+    expect(JSON.parse(res.text)).toEqual({ reading: "deep  calm", n: 2 });
+    expect(res.usage).toEqual({ mock: 1 });
+  });
+
+  test("[inv29c] generate() WITHOUT a fixture still aggregates the echo (unchanged)", async () => {
+    const resolver: FixtureResolver = { text: () => undefined };
+    const gw = createMockProvider({ embeddingDims: DIMS, resolver });
+    const req = userReq("no fixture here");
+    const streamed = await collectTokens(gw.streamChat(req));
+    const { text, usage } = await gw.generate(req);
+    expect(text).toBe(streamed);
+    expect(usage).toBeUndefined(); // echo path carries no usage (aggregate seam)
+  });
 });
 
 describe("v0.2.0 mock — union options + injectable FixtureResolver (additive)", () => {
