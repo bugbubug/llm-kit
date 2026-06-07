@@ -19,6 +19,7 @@
  */
 import type { ChatRequest, ChatResponse, StreamChunk } from "../types.js";
 import type { ChatModel, ProviderContext } from "../ports.js";
+import { LlmKitError } from "../errors.js";
 
 /** OpenAI-compatible chat message (OpenRouter speaks this dialect). */
 interface OrMessage {
@@ -91,7 +92,10 @@ export function createOpenRouterProvider(
       body: JSON.stringify(toOpenRouterBody(req, model)),
     });
     if (!resp.ok) {
-      throw new Error(`openrouter chat failed ${resp.status}: ${await resp.text()}`);
+      throw new LlmKitError(
+        "upstream_error",
+        `openrouter chat failed ${resp.status}: ${await resp.text()}`,
+      );
     }
     const json = (await resp.json()) as OrChatResponse;
     const text = json.choices?.[0]?.message?.content ?? "";

@@ -7,7 +7,7 @@ async function send(fetchImpl, url, headers, body) {
         body: JSON.stringify(body),
     });
     if (!resp.ok) {
-        throw new Error(`generateContent failed ${resp.status}: ${await resp.text()}`);
+        throw new LlmKitError("upstream_error", `generateContent failed ${resp.status}: ${await resp.text()}`);
     }
     return (await resp.json());
 }

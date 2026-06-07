@@ -20,7 +20,9 @@ export type LlmKitErrorCode =
   | "count_mismatch" // embed returned vector count !== input length
   | "unknown_provider" // registry: name not registered
   | "provider_not_configured" // registry: placeholder factory (openrouter/gemini future)
-  | "config_invalid"; // bad config (e.g. non-positive embeddingDims)
+  | "config_invalid" // bad config (e.g. non-positive embeddingDims)
+  | "upstream_error" // HTTP 4xx/5xx from upstream provider API
+  | "response_malformed"; // upstream response missing expected fields
 
 /** Thrown ONLY for adapter/config faults (same philosophy as auth-kit's AuthKitError). */
 export class LlmKitError extends Error {

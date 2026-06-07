@@ -1,6 +1,25 @@
 import { LlmKitError } from "../errors.js";
 import { parseSseFrames } from "../sse.js";
 import { aggregateStream, normalizeStream } from "../stream.js";
+/** Validate embed response structure and dimensions before returning. */
+function validateEmbedResponse(resp, inputCount, expectedDims) {
+    if (!resp ||
+        typeof resp !== "object" ||
+        !Array.isArray(resp.data)) {
+        throw new LlmKitError("response_malformed", "cloudflare embed response missing data[]");
+    }
+    const data = resp.data;
+    if (data.length !== inputCount) {
+        throw new LlmKitError("count_mismatch", `cloudflare embed count ${data.length} != input ${inputCount}`);
+    }
+    for (let i = 0; i < data.length; i++) {
+        const dim = data[i]?.length ?? 0;
+        if (dim !== expectedDims) {
+            throw new LlmKitError("dim_mismatch", `cloudflare embed dim ${dim} != embeddingDims ${expectedDims} (vector ${i})`);
+        }
+    }
+    return data;
+}
 /** Flatten one neutral ChatMessage's parts → a Workers AI flat content string. */
 function flattenParts(parts) {
     return parts.map((p) => ("text" in p ? p.text : "[image]")).join("");
@@ -46,15 +65,16 @@ export const createCloudflareProvider = (ctx, hooks) => {
                 stream: true,
                 max_tokens: r.maxTokens,
                 temperature: r.temperature,
-                // v0.2.0 (ADDITIVE): JSON mode ONLY when responseJson is explicitly
-                // true (absent on all v0.1.0 callers → this spread is {} → no-op, so
-                // existing cloudflare.test.ts output is unchanged).
                 ...(r.responseJson ? { response_format: { type: "json_object" } } : {}),
-                // model/channel-specific extra run input (e.g. GLM enable_thinking:false);
-                // absent → {} (shallow-merged, no side effect).
                 ...(hooks.extraChatInput?.(r, ctx) ?? {}),
             }, { gateway }));
-            yield* parseSseFrames(stream); // split data:{json}\n\n → already-JSON.parsed frames
+            try {
+                yield* parseSseFrames(stream);
+            }
+            finally {
+                // Release the underlying fetch when the consumer breaks out early.
+                stream.cancel();
+            }
         })();
         // hooks.normalizeChunk extracts the token (native {response} vs compat
         // choices[0].delta.content); recoverable upstream errors surface as {error} chunks.
@@ -70,23 +90,8 @@ export const createCloudflareProvider = (ctx, hooks) => {
         },
         async embed(req) {
             const r = hooks.rewriteEmbed?.(req, ctx) ?? req;
-            const resp = (await ai.run(r.model || ctx.embedModel, { text: r.input }, // Workers AI embedding input key is `text` (not OpenAI `input`)
-            { gateway }));
-            // Count self-check: returned vector count MUST equal the input count (the caller
-            // aligns by index; a mismatch would hand back someone else's vector).
-            if (resp.data.length !== r.input.length) {
-                throw new LlmKitError("count_mismatch", `cloudflare embed count ${resp.data.length} != input ${r.input.length}`);
-            }
-            // Dim self-check: EVERY vector in the batch MUST equal ctx.embeddingDims (== the
-            // Vectorize index dimension). Checking only data[0] would miss a later anomalous /
-            // empty vector and let it bypass the guard into the index.
-            for (let i = 0; i < resp.data.length; i++) {
-                const dim = resp.data[i]?.length ?? 0;
-                if (dim !== ctx.embeddingDims) {
-                    throw new LlmKitError("dim_mismatch", `cloudflare embed dim ${dim} != embeddingDims ${ctx.embeddingDims} (vector ${i})`);
-                }
-            }
-            return resp.data;
+            const resp = await ai.run(r.model || ctx.embedModel, { text: r.input }, { gateway });
+            return validateEmbedResponse(resp, r.input.length, ctx.embeddingDims);
         },
     };
     return provider;
@@ -177,17 +182,8 @@ export const createCloudflareNonStreamingProvider = (ctx, hooks) => {
         generate,
         async embed(req) {
             const r = hooks.rewriteEmbed?.(req, ctx) ?? req;
-            const resp = (await aiBinding.run(r.model || ctx.embedModel, { text: r.input }, { gateway }));
-            if (resp.data.length !== r.input.length) {
-                throw new LlmKitError("count_mismatch", `cloudflare embed count ${resp.data.length} != input ${r.input.length}`);
-            }
-            for (let i = 0; i < resp.data.length; i++) {
-                const dim = resp.data[i]?.length ?? 0;
-                if (dim !== ctx.embeddingDims) {
-                    throw new LlmKitError("dim_mismatch", `cloudflare embed dim ${dim} != embeddingDims ${ctx.embeddingDims} (vector ${i})`);
-                }
-            }
-            return resp.data;
+            const resp = await aiBinding.run(r.model || ctx.embedModel, { text: r.input }, { gateway });
+            return validateEmbedResponse(resp, r.input.length, ctx.embeddingDims);
         },
     };
 };

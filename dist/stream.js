@@ -48,11 +48,11 @@ export async function withRetry(fn, hooks) {
  * the request without changing the seam's call sites; today it is a pure fold.
  */
 export async function aggregateStream(stream, _req) {
-    let text = "";
+    const parts = [];
     for await (const chunk of stream) {
         if (chunk.token)
-            text += chunk.token;
+            parts.push(chunk.token);
     }
-    return { text };
+    return { text: parts.join("") };
 }
 //# sourceMappingURL=stream.js.map

@@ -12,7 +12,7 @@
  * PURITY: pure TypeScript — NO runtime imports.
  */
 /** Adapter/config fault codes. Expected/recoverable outcomes are DATA ({error} chunk), not these. */
-export type LlmKitErrorCode = "missing_binding" | "egress_not_allowed" | "dim_mismatch" | "count_mismatch" | "unknown_provider" | "provider_not_configured" | "config_invalid";
+export type LlmKitErrorCode = "missing_binding" | "egress_not_allowed" | "dim_mismatch" | "count_mismatch" | "unknown_provider" | "provider_not_configured" | "config_invalid" | "upstream_error" | "response_malformed";
 /** Thrown ONLY for adapter/config faults (same philosophy as auth-kit's AuthKitError). */
 export declare class LlmKitError extends Error {
     readonly code: LlmKitErrorCode;

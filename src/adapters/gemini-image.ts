@@ -12,6 +12,7 @@
  */
 import type { ImageRequest, ImageResult } from "../types.js";
 import type { ImageModel, ProviderContext } from "../ports.js";
+import { LlmKitError } from "../errors.js";
 import {
   base64ToBytes,
   buildImageBody,
@@ -53,11 +54,13 @@ export function createGeminiImageProvider(
       const model = opts?.model || req.model || ctx.chatModel;
       const resp = await transport.generateContent(model, buildImageBody(req));
       const img = extractImage(resp);
-      if (!img) throw new Error("image generation returned no image part");
-      const dims = pngDimensions(base64ToBytes(img.data)) ?? {
-        width: 1024,
-        height: 1024,
-      };
+      if (!img) {
+        throw new LlmKitError(
+          "response_malformed",
+          "image generation returned no image part",
+        );
+      }
+      const dims = pngDimensions(base64ToBytes(img.data));
       const usage =
         resp.usageMetadata && Object.keys(resp.usageMetadata).length
           ? resp.usageMetadata
@@ -65,8 +68,7 @@ export function createGeminiImageProvider(
       return {
         mimeType: img.mimeType,
         data: img.data,
-        width: dims.width,
-        height: dims.height,
+        ...(dims ? { width: dims.width, height: dims.height } : {}),
         ...(usage ? { usage } : {}),
       };
     },

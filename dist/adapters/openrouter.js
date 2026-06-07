@@ -1,3 +1,4 @@
+import { LlmKitError } from "../errors.js";
 const DEFAULT_BASE = "https://openrouter.ai/api/v1";
 /** Map the neutral SDK IR → an OpenAI-style chat-completions request body. */
 export function toOpenRouterBody(req, model) {
@@ -47,7 +48,7 @@ export function createOpenRouterProvider(ctx, opts) {
             body: JSON.stringify(toOpenRouterBody(req, model)),
         });
         if (!resp.ok) {
-            throw new Error(`openrouter chat failed ${resp.status}: ${await resp.text()}`);
+            throw new LlmKitError("upstream_error", `openrouter chat failed ${resp.status}: ${await resp.text()}`);
         }
         const json = (await resp.json());
         const text = json.choices?.[0]?.message?.content ?? "";

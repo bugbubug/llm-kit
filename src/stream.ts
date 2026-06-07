@@ -80,9 +80,9 @@ export async function aggregateStream(
   stream: AsyncIterable<StreamChunk>,
   _req?: unknown,
 ): Promise<ChatResponse> {
-  let text = "";
+  const parts: string[] = [];
   for await (const chunk of stream) {
-    if (chunk.token) text += chunk.token;
+    if (chunk.token) parts.push(chunk.token);
   }
-  return { text };
+  return { text: parts.join("") };
 }
