@@ -7,6 +7,10 @@
  * core (src/index.ts) never imports this module, so a Node-only consumer can use
  * the contracts + mock without pulling adapter code.
  */
-export { createCloudflareProvider } from "./cloudflare.js";
+export { createCloudflareProvider, createCloudflareNonStreamingProvider } from "./cloudflare.js";
 export { cloudflareHooks } from "./cloudflare-hooks.js";
+export { createGeminiProvider } from "./gemini.js";
+export { createGeminiImageProvider } from "./gemini-image.js";
+export { createOpenRouterProvider } from "./openrouter.js";
+export { MemoryTokenCache } from "./memory-token-cache.js";
 //# sourceMappingURL=index.d.ts.map

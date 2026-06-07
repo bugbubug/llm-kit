@@ -22,14 +22,16 @@
  *   • mock provider ...... ./mock.js
  *   • cloudflare adapter . ./adapters/index.js
  */
-export type { InlineData, Part, ChatRole, ChatMessage, Purpose, ChatRequest, StreamChunk, ChatResponse, EmbeddingRequest, } from "./types.js";
-export type { ChatModel, Embedder, LlmProvider, ProviderHooks, ProviderContext, ProviderFactory, AiBinding, AiGatewayOptions, } from "./ports.js";
+export type { InlineData, Part, ChatRole, ChatMessage, Purpose, ChatRequest, StreamChunk, ChatResponse, EmbeddingRequest, ThinkingLevel, VisionRequest, VisionResponse, ImageRequest, ImageResult, FixtureResolver, } from "./types.js";
+export type { ChatModel, Embedder, LlmProvider, ProviderHooks, ProviderContext, ProviderFactory, AiBinding, AiGatewayOptions, VisionModel, ImageModel, TokenCache, ProviderRegistry, } from "./ports.js";
 export { LlmKitError } from "./errors.js";
 export type { LlmKitErrorCode } from "./errors.js";
 export { parseSseFrames } from "./sse.js";
 export { defaultHooks, normalizeStream, withRetry, aggregateStream, } from "./stream.js";
 export { assertGatewayEgress, isAllowedGatewayUrl, DEFAULT_CF_GATEWAY_PREFIXES, } from "./egress.js";
 export { featureHashEmbed } from "./embedding.js";
-export { createMockProvider } from "./mock.js";
+export { createMockProvider, createMockVisionModel, createMockImageModel, } from "./mock.js";
+export type { MockOptions } from "./mock.js";
+export { createProviderRegistry } from "./registry.js";
 export { createCloudflareProvider, cloudflareHooks } from "./adapters/index.js";
 //# sourceMappingURL=index.d.ts.map

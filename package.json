@@ -1,6 +1,6 @@
 {
   "name": "@bugbubug/llm-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pure, framework/runtime-agnostic LLM gateway SDK — contracts + egress adapters only (Cloudflare Workers AI via AI Gateway + deterministic mock). Streaming-first chat (streamChat/generate) + embed. NO routing, NO product policy.",
   "license": "MIT",
   "author": "bugbubug",
@@ -16,6 +16,14 @@
     "./adapters/cloudflare": {
       "types": "./dist/adapters/index.d.ts",
       "default": "./dist/adapters/index.js"
+    },
+    "./adapters/gemini": {
+      "types": "./dist/adapters/gemini.d.ts",
+      "default": "./dist/adapters/gemini.js"
+    },
+    "./adapters/openrouter": {
+      "types": "./dist/adapters/openrouter.d.ts",
+      "default": "./dist/adapters/openrouter.js"
     },
     "./mock": {
       "types": "./dist/mock.d.ts",

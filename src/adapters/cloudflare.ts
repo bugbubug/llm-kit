@@ -103,6 +103,10 @@ export const createCloudflareProvider: ProviderFactory = (
           stream: true,
           max_tokens: r.maxTokens,
           temperature: r.temperature,
+          // v0.2.0 (ADDITIVE): JSON mode ONLY when responseJson is explicitly
+          // true (absent on all v0.1.0 callers → this spread is {} → no-op, so
+          // existing cloudflare.test.ts output is unchanged).
+          ...(r.responseJson ? { response_format: { type: "json_object" } } : {}),
           // model/channel-specific extra run input (e.g. GLM enable_thinking:false);
           // absent → {} (shallow-merged, no side effect).
           ...(hooks.extraChatInput?.(r, ctx) ?? {}),
@@ -159,4 +163,131 @@ export const createCloudflareProvider: ProviderFactory = (
   };
 
   return provider;
+};
+
+/* ── v0.2.0: native non-streaming Workers AI factory (ADDITIVE) ──────────────
+ * `createCloudflareProvider` above is UNCHANGED (its generate() still
+ * aggregates streamChat over the SSE stream, so cloudflare.test.ts stays green).
+ * This NEW factory does a native `stream:false` single JSON `ai.run` for
+ * generate(), then wraps the result as a one-chunk streamChat. extract helpers
+ * are ported from emo packages/llm/src/workers-ai.ts.
+ */
+
+/** Pull the generated text out of Workers AI's (loosely-typed) non-stream output. */
+function extractWorkersAiText(out: unknown): string {
+  if (typeof out === "string") return out;
+  if (out && typeof out === "object") {
+    const o = out as Record<string, unknown>;
+    // Text models return `{ response: string }`; JSON mode may return an object.
+    if (typeof o.response === "string") return o.response;
+    if (o.response !== undefined) return JSON.stringify(o.response);
+    // OpenAI-compatible shape: { choices: [{ message: { content } }] }.
+    const choices = o.choices;
+    if (Array.isArray(choices) && choices[0]) {
+      const msg = (choices[0] as Record<string, unknown>).message as
+        | Record<string, unknown>
+        | undefined;
+      if (msg && typeof msg.content === "string") return msg.content;
+    }
+  }
+  return "";
+}
+
+/** Read a numeric usage map from a non-stream output, if the model reported one. */
+function extractWorkersAiUsage(out: unknown): Record<string, number> | undefined {
+  if (out && typeof out === "object") {
+    const usage = (out as Record<string, unknown>).usage;
+    if (usage && typeof usage === "object") {
+      const acc: Record<string, number> = {};
+      for (const [k, v] of Object.entries(usage as Record<string, unknown>)) {
+        if (typeof v === "number") acc[k] = v;
+      }
+      if (Object.keys(acc).length) return acc;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * v0.2.0 — Cloudflare Workers AI provider whose generate() is a NATIVE
+ * `stream:false` single JSON `ai.run` (NO SSE aggregation), and whose
+ * streamChat() yields that result as ONE chunk. `embed` reuses the same
+ * count/dim self-checks as the streaming provider. The existing
+ * createCloudflareProvider is NOT modified.
+ */
+export const createCloudflareNonStreamingProvider: ProviderFactory = (
+  ctx: ProviderContext,
+  hooks: ProviderHooks,
+): LlmProvider => {
+  const ai = ctx.ai;
+  if (!ai) {
+    throw new LlmKitError(
+      "missing_binding",
+      "cloudflare provider requires the Workers AI binding (ctx.ai / env.AI)",
+    );
+  }
+
+  // Bind the narrowed (definitely-defined) binding to a local so the closures
+  // below (arrow consts) keep the non-undefined narrowing.
+  const aiBinding = ai;
+
+  const gateway: AiGatewayOptions = {
+    id: ctx.gatewayId ?? "",
+    collectLogPayload: false,
+  };
+
+  const generate = async (req: ChatRequest): Promise<ChatResponse> => {
+    const r = hooks.rewriteChat?.(req, ctx) ?? req;
+    const out = await aiBinding.run(
+      r.model || ctx.chatModel,
+      {
+        messages: toWorkersAiMessages(r),
+        stream: false,
+        max_tokens: r.maxTokens,
+        temperature: r.temperature,
+        ...(r.responseJson ? { response_format: { type: "json_object" } } : {}),
+        ...(hooks.extraChatInput?.(r, ctx) ?? {}),
+      },
+      { gateway },
+    );
+    const usage = extractWorkersAiUsage(out);
+    return { text: extractWorkersAiText(out), ...(usage ? { usage } : {}) };
+  };
+
+  const streamChat = async function* (
+    req: ChatRequest,
+  ): AsyncIterable<StreamChunk> {
+    const r = await generate(req);
+    yield { token: r.text } satisfies StreamChunk;
+  };
+
+  return {
+    name: "cloudflare",
+    streamChat,
+    generate,
+    async embed(req: EmbeddingRequest): Promise<number[][]> {
+      const r = hooks.rewriteEmbed?.(req, ctx) ?? req;
+      const resp = (await aiBinding.run(
+        r.model || ctx.embedModel,
+        { text: r.input },
+        { gateway },
+      )) as { shape?: number[]; data: number[][] };
+      if (resp.data.length !== r.input.length) {
+        throw new LlmKitError(
+          "count_mismatch",
+          `cloudflare embed count ${resp.data.length} != input ${r.input.length}`,
+        );
+      }
+      for (let i = 0; i < resp.data.length; i++) {
+        const dim = resp.data[i]?.length ?? 0;
+        if (dim !== ctx.embeddingDims) {
+          throw new LlmKitError(
+            "dim_mismatch",
+            `cloudflare embed dim ${dim} != embeddingDims ${ctx.embeddingDims} (vector ${i})`,
+          );
+        }
+      }
+      return resp.data;
+    },
+  };
 };

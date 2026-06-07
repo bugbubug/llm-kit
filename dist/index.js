@@ -34,7 +34,11 @@ export { assertGatewayEgress, isAllowedGatewayUrl, DEFAULT_CF_GATEWAY_PREFIXES, 
 // ── Deterministic feature-hash embedding (embedding.ts) ──────────────────────
 export { featureHashEmbed } from "./embedding.js";
 // ── Deterministic mock provider (mock.ts): echo stream + featureHash embed ───
-export { createMockProvider } from "./mock.js";
+//    v0.2.0 adds the generic vision/image mock factories (NEW value exports) and
+//    the MockOptions type (type-only); createMockProvider stays a real export.
+export { createMockProvider, createMockVisionModel, createMockImageModel, } from "./mock.js";
+// ── By-NAME provider registry (registry.ts): pure, product-agnostic ──────────
+export { createProviderRegistry } from "./registry.js";
 // ── Cloudflare Workers AI (via AI Gateway) adapter (adapters/index.ts) ───────
 export { createCloudflareProvider, cloudflareHooks } from "./adapters/index.js";
 //# sourceMappingURL=index.js.map

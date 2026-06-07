@@ -17,7 +17,11 @@ import type {
   ChatRequest,
   ChatResponse,
   EmbeddingRequest,
+  ImageRequest,
+  ImageResult,
   StreamChunk,
+  VisionRequest,
+  VisionResponse,
 } from "./types.js";
 
 /** Streaming + aggregated chat capability. */
@@ -36,6 +40,35 @@ export interface Embedder {
 /** A full LLM provider: chat (stream + generate) AND embed, plus a name. */
 export interface LlmProvider extends ChatModel, Embedder {
   readonly name: string;
+}
+
+/**
+ * v0.2.0 (ADDITIVE). Generic multimodal-image-INPUT capability. Whichever
+ * adapter supports it implements it (the Gemini adapter does). "Vision uses
+ * Gemini" is the CONSUMER's wiring choice — NOT an SDK rule.
+ */
+export interface VisionModel {
+  analyze(req: VisionRequest): Promise<VisionResponse>;
+}
+
+/**
+ * v0.2.0 (ADDITIVE). Generic image-GENERATION capability returning raw
+ * bytes + meta; NO storage (the consumer persists). The Gemini image adapter
+ * implements it.
+ */
+export interface ImageModel {
+  generate(req: ImageRequest): Promise<ImageResult>;
+}
+
+/**
+ * v0.2.0 (ADDITIVE). Token-cache PORT (the SDK only DEFINES it). A consumer
+ * injects a KV-backed impl in production; the SDK ships only the pure in-memory
+ * default (MemoryTokenCache, under src/adapters/** so KV-typed caches stay in
+ * the exempt zone). Lifted from emo packages/llm/src/types.ts TokenCache.
+ */
+export interface TokenCache {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string, ttlSeconds: number): Promise<void>;
 }
 
 /**
@@ -84,6 +117,23 @@ export interface ProviderContext {
     apiKey: string;
     accountId?: string;
   };
+  /**
+   * v0.2.0 (ADDITIVE/optional). Token cache for adapters that mint short-lived
+   * OAuth tokens (the Vertex Gemini transport). The consumer injects a
+   * KV-backed impl; the SDK's MemoryTokenCache default suffices for Node/tests.
+   */
+  tokenCache?: TokenCache;
+  /**
+   * v0.2.0 (ADDITIVE/optional). Vertex (service-account) config for the Gemini
+   * adapter. When present the Gemini transport is the Vertex channel
+   * (SA-JSON → JWT → OAuth Bearer); else it falls back to `http.apiKey`
+   * (Developer API). `http.apiKey` still covers the Developer-API + OpenRouter keys.
+   */
+  vertex?: {
+    saJson: string;
+    projectId: string;
+    location: string;
+  };
 }
 
 /** Provider factory: (ctx, hooks) → LlmProvider. */
@@ -91,6 +141,21 @@ export type ProviderFactory = (
   ctx: ProviderContext,
   hooks: ProviderHooks,
 ) => LlmProvider;
+
+/**
+ * v0.2.0 (ADDITIVE). By-NAME provider registry. NO (productId, tier) map, NO
+ * route table, NO fallback policy — those are CONSUMER concerns. `create`
+ * throws LlmKitError("unknown_provider") for an unregistered name; a registered
+ * placeholder factory throws LlmKitError("provider_not_configured").
+ */
+export interface ProviderRegistry {
+  register(name: string, factory: ProviderFactory): void;
+  create(
+    name: string,
+    ctx: ProviderContext,
+    hooks: ProviderHooks,
+  ): LlmProvider;
+}
 
 /**
  * Channel-specific extension hooks (request rewrite / extra run input / retry /

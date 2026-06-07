@@ -6,8 +6,11 @@
 import { describe, expect, test } from "vitest";
 import {
   createMockProvider,
+  createMockVisionModel,
+  createMockImageModel,
   featureHashEmbed,
   type ChatRequest,
+  type FixtureResolver,
   type StreamChunk,
 } from "../src/index.js";
 
@@ -226,5 +229,81 @@ describe("mock generate — aggregate seam", () => {
     const { text } = await gw.generate(req);
     expect(text).toBe(streamed);
     expect(text).toContain("I had a rough day at work");
+  });
+});
+
+describe("v0.2.0 mock — union options + injectable FixtureResolver (additive)", () => {
+  test("options form is equivalent to the positional form (name + embed dims)", async () => {
+    const gw = createMockProvider({ embeddingDims: DIMS });
+    expect(gw.name).toBe("mock");
+    const out = await gw.embed({ model: "m", input: ["a", "b"] });
+    expect(out.length).toBe(2);
+    expect(out[0]?.length).toBe(DIMS);
+  });
+
+  test("resolver.text(ref) overrides the echo when req.mockRef is present", async () => {
+    const resolver: FixtureResolver = {
+      text: (ref) => (ref === "fx-1" ? "fixture reply here" : undefined),
+    };
+    const gw = createMockProvider({ embeddingDims: DIMS, resolver });
+    const req: ChatRequest = {
+      model: "mock-chat",
+      mockRef: "fx-1",
+      messages: [{ role: "user", parts: [{ text: "ignored input" }] }],
+    };
+    const full = await collectTokens(gw.streamChat(req));
+    expect(full.trim()).toBe("fixture reply here");
+    expect(full).not.toContain("ignored input");
+  });
+
+  test("falls back to the shipped echo when the resolver returns undefined or no mockRef", async () => {
+    const resolver: FixtureResolver = { text: () => undefined };
+    const gw = createMockProvider({ embeddingDims: DIMS, resolver });
+    // No mockRef → echo path.
+    expect(await collectTokens(gw.streamChat(userReq("echo me")))).toContain("echo me");
+    // mockRef present but resolver returns undefined → echo path.
+    const req: ChatRequest = {
+      model: "mock-chat",
+      mockRef: "unknown",
+      messages: [{ role: "user", parts: [{ text: "still echoed" }] }],
+    };
+    expect(await collectTokens(gw.streamChat(req))).toContain("still echoed");
+  });
+
+  test("createMockVisionModel: default content-free analysis; resolver override", async () => {
+    const def = await createMockVisionModel().analyze({
+      model: "m",
+      image: { mimeType: "image/png", data: "QQ==" },
+      prompt: "what",
+    });
+    expect(def.analysis).toEqual({ note: "mock-vision", prompt: "what" });
+
+    const resolver: FixtureResolver = { vision: (ref) => ({ ref }) };
+    const out = await createMockVisionModel({ resolver }).analyze({
+      model: "m",
+      image: { mimeType: "image/png", data: "QQ==" },
+      prompt: "what",
+      mockRef: "v1",
+    });
+    expect(out.analysis).toEqual({ ref: "v1" });
+  });
+
+  test("createMockImageModel: default 1x1 PNG placeholder; resolver override", async () => {
+    const def = await createMockImageModel().generate({ model: "m", prompt: "draw" });
+    expect(def.mimeType).toBe("image/png");
+    expect(def.width).toBe(1);
+    expect(def.height).toBe(1);
+    expect(typeof def.data).toBe("string");
+    expect("assetKey" in (def as unknown as Record<string, unknown>)).toBe(false);
+
+    const resolver: FixtureResolver = {
+      image: () => ({ mimeType: "image/jpeg", data: "ZZZ", width: 64, height: 64 }),
+    };
+    const out = await createMockImageModel({ resolver }).generate({
+      model: "m",
+      prompt: "draw",
+      mockRef: "i1",
+    });
+    expect(out).toEqual({ mimeType: "image/jpeg", data: "ZZZ", width: 64, height: 64 });
   });
 });

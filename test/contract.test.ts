@@ -43,6 +43,11 @@ const EXPECTED_EXPORTS = [
   "createMockProvider",
   "createCloudflareProvider",
   "cloudflareHooks",
+  // v0.2.0 additive value exports (adapter factories + toProviderJsonSchema are
+  // intentionally NOT here — they live only on ./adapters/* and ./zod subpaths).
+  "createProviderRegistry",
+  "createMockVisionModel",
+  "createMockImageModel",
 ].sort();
 
 describe("frozen barrel surface", () => {

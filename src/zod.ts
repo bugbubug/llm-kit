@@ -12,13 +12,20 @@
  * same shapes, same multimodal parts discrimination). They are pure shape/format
  * guards — they do NOT add normalization or routing semantics the core lacks.
  *
- * NOTE: zod v3 is required (habibi/vendored mem0 pin zod v3; do NOT upgrade to
- * v4). `z.infer<...>` of each schema is assignable to the corresponding `import
- * type` from "@bugbubug/llm-kit", so a body parsed here flows straight into a
- * provider call.
+ * NOTE: the IR mirror below stays on the zod **v3** surface (habibi/vendored
+ * mem0 pin zod v3; do NOT change the mirror's surface). `z.infer<...>` of each
+ * schema is assignable to the corresponding `import type` from
+ * "@bugbubug/llm-kit", so a body parsed here flows straight into a provider call.
+ *
+ * The ONE exception is the RESERVED `toProviderJsonSchema` helper at the bottom,
+ * which uses the `zod/v4` subpath (zod@3.25.76 ships v3 + v4 side-by-side, so no
+ * peer-range bump is needed — same posture emo uses in
+ * packages/llm/src/json-schema.ts). It is an OFF-barrel seam with no live
+ * consumer; the frozen core never imports this module.
  */
 
 import { z } from "zod";
+import * as z4 from "zod/v4";
 
 // ── Multimodal content parts (mirror types.ts InlineData / Part) ─────────────
 
@@ -46,6 +53,9 @@ export const ChatRoleSchema = z.enum(["user", "assistant"]);
 /** Inference purpose tag (carried for the consumer's gateway logging). Mirrors `Purpose`. */
 export const PurposeSchema = z.enum(["chat", "memory-extract", "memory-embed"]);
 
+/** Reasoning depth (v0.2.0). Mirrors `ThinkingLevel`. */
+export const ThinkingLevelSchema = z.enum(["minimal", "low", "medium", "high"]);
+
 // ── Messages + requests (mirror types.ts ChatMessage / ChatRequest / EmbeddingRequest)
 
 /** One conversational turn: role + parts[]. Mirrors `ChatMessage`. */
@@ -66,6 +76,11 @@ export const ChatRequestSchema = z.object({
   purpose: z.enum(["chat", "memory-extract"]).optional(),
   maxTokens: z.number().optional(),
   temperature: z.number().optional(),
+  // v0.2.0 (ADDITIVE/optional). NO default on responseJson — a default would
+  // change the v0.1.0 parse output; absent/false → plain text.
+  thinking: ThinkingLevelSchema.optional(),
+  responseJson: z.boolean().optional(),
+  mockRef: z.string().optional(),
 });
 
 /** Streaming-normalized chunk. Errors are DATA here, never thrown. Mirrors `StreamChunk`. */
@@ -79,6 +94,8 @@ export const StreamChunkSchema = z.object({
 export const ChatResponseSchema = z.object({
   text: z.string(),
   meta: z.record(z.unknown()).optional(),
+  // v0.2.0 (ADDITIVE/optional). Provider usage telemetry.
+  usage: z.record(z.number()).optional(),
 });
 
 /** Embedding request: batch of strings → one vector each (index-aligned). Mirrors `EmbeddingRequest`. */
@@ -88,13 +105,90 @@ export const EmbeddingRequestSchema = z.object({
   purpose: z.literal("memory-embed").optional(),
 });
 
+// ── v0.2.0 generic multimodal capability mirrors (Vision / Image) ────────────
+
+/** Generic image-understanding request. Mirrors `VisionRequest`. */
+export const VisionRequestSchema = z.object({
+  model: z.string(),
+  image: InlineDataSchema,
+  prompt: z.string(),
+  responseJson: z.boolean().optional(),
+  thinking: ThinkingLevelSchema.optional(),
+  mockRef: z.string().optional(),
+});
+
+/** Generic image-understanding response. Mirrors `VisionResponse`. */
+export const VisionResponseSchema = z.object({
+  analysis: z.unknown(),
+  usage: z.record(z.number()).optional(),
+});
+
+/** Generic image-GENERATION request. Mirrors `ImageRequest`. */
+export const ImageRequestSchema = z.object({
+  model: z.string(),
+  prompt: z.string(),
+  refImages: z.array(InlineDataSchema).optional(),
+  aspectRatio: z.string().optional(),
+  imageSize: z.string().optional(),
+  mockRef: z.string().optional(),
+});
+
+/** Generic image-GENERATION result (raw bytes + meta, NO assetKey). Mirrors `ImageResult`. */
+export const ImageResultSchema = z.object({
+  mimeType: z.string(),
+  data: z.string(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  usage: z.record(z.number()).optional(),
+});
+
 // ── Inferred types (assignable to the core `import type` equivalents) ────────
 export type InlineDataInput = z.infer<typeof InlineDataSchema>;
 export type PartInput = z.infer<typeof PartSchema>;
 export type ChatRoleInput = z.infer<typeof ChatRoleSchema>;
 export type PurposeInput = z.infer<typeof PurposeSchema>;
+export type ThinkingLevelInput = z.infer<typeof ThinkingLevelSchema>;
 export type ChatMessageInput = z.infer<typeof ChatMessageSchema>;
 export type ChatRequestInput = z.infer<typeof ChatRequestSchema>;
 export type StreamChunkInput = z.infer<typeof StreamChunkSchema>;
 export type ChatResponseInput = z.infer<typeof ChatResponseSchema>;
 export type EmbeddingRequestInput = z.infer<typeof EmbeddingRequestSchema>;
+export type VisionRequestInput = z.infer<typeof VisionRequestSchema>;
+export type VisionResponseInput = z.infer<typeof VisionResponseSchema>;
+export type ImageRequestInput = z.infer<typeof ImageRequestSchema>;
+export type ImageResultInput = z.infer<typeof ImageResultSchema>;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * RESERVED off-barrel JSON-Schema seam (v0.2.0). The ONLY zod/v4 use in the kit.
+ *
+ * Zero-dependency JSON-Schema export for FUTURE provider-native structured
+ * output (Gemini `responseSchema` / OpenAI `response_format: json_schema`). No
+ * live consumer touches it today — adapters send only `responseMimeType:
+ * "application/json"` and the consumer Zod-validates the parsed text afterwards.
+ * It leans on `zod/v4` (zod@3.25.76 ships v4 side-by-side), the only surface
+ * whose `toJSONSchema` emits JSON Schema natively. Ported from emo
+ * packages/llm/src/json-schema.ts.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Any `zod/v4` schema — the widest correct input without `any`. */
+export type ProviderJsonSchemaInput = z4.core.$ZodType;
+
+/** The JSON Schema object `toProviderJsonSchema` returns (zod/v4's own type). */
+export type ProviderJsonSchema = z4.core.JSONSchema.BaseSchema;
+
+/** Options forwarded to `z4.toJSONSchema` (zod-typed); `target` defaults below. */
+export type ToProviderJsonSchemaOptions = NonNullable<
+  Parameters<typeof z4.toJSONSchema>[1]
+>;
+
+/**
+ * Convert a `zod/v4` schema into a provider-ready JSON Schema object. Defaults
+ * to `draft-2020-12` (what Gemini `responseSchema` / OpenAI `json_schema`
+ * expect); override via `opts`. Pure: no network, no I/O.
+ */
+export function toProviderJsonSchema(
+  schema: ProviderJsonSchemaInput,
+  opts?: ToProviderJsonSchemaOptions,
+): ProviderJsonSchema {
+  return z4.toJSONSchema(schema, { target: "draft-2020-12", ...opts });
+}

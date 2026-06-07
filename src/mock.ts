@@ -19,13 +19,18 @@
  */
 import { featureHashEmbed } from "./embedding.js";
 import { aggregateStream } from "./stream.js";
-import type { LlmProvider } from "./ports.js";
+import type { ImageModel, LlmProvider, VisionModel } from "./ports.js";
 import type {
   ChatRequest,
   ChatResponse,
   EmbeddingRequest,
+  FixtureResolver,
+  ImageRequest,
+  ImageResult,
   Part,
   StreamChunk,
+  VisionRequest,
+  VisionResponse,
 } from "./types.js";
 
 /** Flatten a message's parts to text: {text} parts concatenated; {inlineData} contributes nothing. */
@@ -109,13 +114,47 @@ function buildReply(userText: string, memories: string[]): string {
 }
 
 /**
+ * v0.2.0 (ADDITIVE). Options for the configurable mock. The injectable
+ * `resolver` is a business-NEUTRAL seam: when a ChatRequest carries the OPTIONAL
+ * opaque `mockRef` AND `resolver.text(ref)` returns a string, that fixture text
+ * is streamed (word-by-word) INSTEAD of the shipped echo; otherwise the SDK
+ * falls back to its content-free echo/recalledMemories logic. The SDK ships NO
+ * fixture content. `profile` is an opaque string the resolver interprets (the
+ * SDK does NOT enumerate profiles). `latencyMs` is reserved/no-op (kept for
+ * future deterministic latency simulation; the mock stays synchronous-fast).
+ */
+export interface MockOptions {
+  embeddingDims: number;
+  resolver?: FixtureResolver;
+  profile?: string;
+  latencyMs?: number;
+}
+
+/**
  * Deterministic mock LLM provider. `name` is "mock". streamChat echoes the last
  * user message (Arabic input → Arabic template), embed feature-hashes each input,
  * generate aggregates streamChat.
+ *
+ * v0.2.0: the signature is WIDENED to a union overload (number | MockOptions) so
+ * every existing positional caller (`createMockProvider(dims)`) stays
+ * byte-identical, while a new options form unlocks the injectable FixtureResolver.
  */
-export function createMockProvider(embeddingDims: number): LlmProvider {
+export function createMockProvider(embeddingDims: number): LlmProvider;
+export function createMockProvider(options: MockOptions): LlmProvider;
+export function createMockProvider(arg: number | MockOptions): LlmProvider {
+  const opts: MockOptions = typeof arg === "number" ? { embeddingDims: arg } : arg;
+  const { embeddingDims, resolver } = opts;
+
   async function* streamChat(req: ChatRequest): AsyncIterable<StreamChunk> {
-    const reply = buildReply(lastUserContent(req), recalledMemories(req));
+    // Injectable fixture seam (content-free default): if the request carries an
+    // opaque mockRef AND the consumer's resolver returns a fixture string, stream
+    // THAT verbatim; else fall back to the shipped echo/recalledMemories reply.
+    const fixture =
+      req.mockRef !== undefined ? resolver?.text?.(req.mockRef) : undefined;
+    const reply =
+      typeof fixture === "string"
+        ? fixture
+        : buildReply(lastUserContent(req), recalledMemories(req));
     // Split on whitespace (deterministic), yield word-by-word; each token gets a
     // trailing space to present streaming concatenation.
     const words = reply.split(/\s+/).filter((w) => w.length > 0);
@@ -136,6 +175,67 @@ export function createMockProvider(embeddingDims: number): LlmProvider {
 
     async embed(req: EmbeddingRequest): Promise<number[][]> {
       return req.input.map((s) => featureHashEmbed(s, embeddingDims));
+    },
+  };
+}
+
+/**
+ * v0.2.0 (ADDITIVE). Deterministic, zero-egress mock VisionModel. Consults
+ * `resolver.vision(req.mockRef)` when a mockRef + resolver are present; otherwise
+ * emits a content-free default `{ analysis: { note: "mock-vision", prompt },
+ * usage: { mock: 1 } }`. NO product fixtures in the SDK.
+ */
+export function createMockVisionModel(options?: {
+  resolver?: FixtureResolver;
+  latencyMs?: number;
+}): VisionModel {
+  const resolver = options?.resolver;
+  return {
+    async analyze(req: VisionRequest): Promise<VisionResponse> {
+      const fixture =
+        req.mockRef !== undefined ? resolver?.vision?.(req.mockRef) : undefined;
+      if (fixture !== undefined) {
+        return { analysis: fixture, usage: { mock: 1 } };
+      }
+      return {
+        analysis: { note: "mock-vision", prompt: req.prompt },
+        usage: { mock: 1 },
+      };
+    },
+  };
+}
+
+/**
+ * A minimal 1×1 transparent PNG (base64, no data: prefix). The content-free
+ * placeholder the mock ImageModel returns when no fixture resolves. Its IHDR
+ * encodes width=1/height=1, so the SDK reports those dims without any product
+ * meaning.
+ */
+const MOCK_PNG_1X1 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+P+/HgAFhAJ/wlseKgAAAABJRU5ErkJggg==";
+
+/**
+ * v0.2.0 (ADDITIVE). Deterministic, zero-egress mock ImageModel. Consults
+ * `resolver.image(req.mockRef)` when a mockRef + resolver are present; otherwise
+ * returns a content-free 1×1 PNG placeholder. NO product fixtures, NO storage.
+ */
+export function createMockImageModel(options?: {
+  resolver?: FixtureResolver;
+  latencyMs?: number;
+}): ImageModel {
+  const resolver = options?.resolver;
+  return {
+    async generate(req: ImageRequest): Promise<ImageResult> {
+      const fixture =
+        req.mockRef !== undefined ? resolver?.image?.(req.mockRef) : undefined;
+      if (fixture !== undefined) return fixture;
+      return {
+        mimeType: "image/png",
+        data: MOCK_PNG_1X1,
+        width: 1,
+        height: 1,
+        usage: { mock: 1 },
+      };
     },
   };
 }
