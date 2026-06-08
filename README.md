@@ -87,7 +87,7 @@ any consumer gets prebuilt types and JS with no build step. Pin it by **immutabl
 git tag**:
 
 ```bash
-pnpm add github:bugbubug/llm-kit#v0.2.1
+pnpm add github:bugbubug/llm-kit#v0.2.4
 ```
 
 Export subpaths:
@@ -226,9 +226,10 @@ this disable path.**
 
 ## Versioning
 
-The kit is consumed by **immutable git tag**. The frozen contract
-(`src/index.ts` == `docs/FROZEN_CONTRACT.ts`, enforced by `test/contract.test.ts`)
-is **additive-only**.
+The kit is consumed by **immutable git tag**. The frozen contract — the public
+export surface of `src/index.ts` — is captured by the **API Extractor** report
+`etc/llm-kit.api.md` and enforced by `bun run api:check` (which fails on any drift
+from that baseline). It is **additive-only**.
 
 - **v0.1.0** — habibi-needs-only: streaming-first, Cloudflare + mock, text only.
 - **v0.2.0** — additive multi-provider: native non-streaming `generate`; Gemini

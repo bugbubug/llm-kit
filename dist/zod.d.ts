@@ -138,6 +138,7 @@ export declare const ChatMessageSchema: z.ZodObject<{
         };
     }>]>, "many">;
 }, "strip", z.ZodTypeAny, {
+    role: "user" | "assistant";
     parts: ({
         text: string;
     } | {
@@ -146,8 +147,8 @@ export declare const ChatMessageSchema: z.ZodObject<{
             data: string;
         };
     })[];
-    role: "user" | "assistant";
 }, {
+    role: "user" | "assistant";
     parts: ({
         text: string;
     } | {
@@ -156,7 +157,6 @@ export declare const ChatMessageSchema: z.ZodObject<{
             data: string;
         };
     })[];
-    role: "user" | "assistant";
 }>;
 /**
  * Neutral chat request. `system` is a SEPARATE optional field (NOT a message
@@ -197,6 +197,7 @@ export declare const ChatRequestSchema: z.ZodObject<{
             };
         }>]>, "many">;
     }, "strip", z.ZodTypeAny, {
+        role: "user" | "assistant";
         parts: ({
             text: string;
         } | {
@@ -205,8 +206,8 @@ export declare const ChatRequestSchema: z.ZodObject<{
                 data: string;
             };
         })[];
-        role: "user" | "assistant";
     }, {
+        role: "user" | "assistant";
         parts: ({
             text: string;
         } | {
@@ -215,7 +216,6 @@ export declare const ChatRequestSchema: z.ZodObject<{
                 data: string;
             };
         })[];
-        role: "user" | "assistant";
     }>, "many">;
     stream: z.ZodOptional<z.ZodBoolean>;
     purpose: z.ZodOptional<z.ZodEnum<["chat", "memory-extract"]>>;
@@ -226,6 +226,7 @@ export declare const ChatRequestSchema: z.ZodObject<{
     mockRef: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     messages: {
+        role: "user" | "assistant";
         parts: ({
             text: string;
         } | {
@@ -234,7 +235,6 @@ export declare const ChatRequestSchema: z.ZodObject<{
                 data: string;
             };
         })[];
-        role: "user" | "assistant";
     }[];
     model: string;
     stream?: boolean | undefined;
@@ -247,6 +247,7 @@ export declare const ChatRequestSchema: z.ZodObject<{
     mockRef?: string | undefined;
 }, {
     messages: {
+        role: "user" | "assistant";
         parts: ({
             text: string;
         } | {
@@ -255,7 +256,6 @@ export declare const ChatRequestSchema: z.ZodObject<{
                 data: string;
             };
         })[];
-        role: "user" | "assistant";
     }[];
     model: string;
     stream?: boolean | undefined;

@@ -63,6 +63,12 @@ export function buildImageBody(req) {
         generationConfig: { responseModalities: ["TEXT", "IMAGE"], ...sizing },
     };
 }
+/** Provider-reported usage telemetry, or undefined when the response carried none. */
+export function usageOf(resp) {
+    return resp.usageMetadata && Object.keys(resp.usageMetadata).length
+        ? resp.usageMetadata
+        : undefined;
+}
 /** Join the user-visible text parts, dropping any `thought: true` reasoning. */
 export function extractText(resp) {
     return (resp.candidates?.[0]?.content?.parts ?? [])

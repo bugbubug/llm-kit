@@ -67,6 +67,8 @@ export declare function buildTextBody(req: Pick<ChatRequest, "system" | "message
 export declare function buildVisionBody(req: Pick<VisionRequest, "image" | "prompt" | "responseJson">, thinking: ThinkingLevel | undefined): GenerateContentBody;
 /** Image generation: requires `responseModalities` to include IMAGE. */
 export declare function buildImageBody(req: Pick<ImageRequest, "prompt" | "refImages" | "aspectRatio" | "imageSize">): GenerateContentBody;
+/** Provider-reported usage telemetry, or undefined when the response carried none. */
+export declare function usageOf(resp: GenerateContentResponse): Record<string, number> | undefined;
 /** Join the user-visible text parts, dropping any `thought: true` reasoning. */
 export declare function extractText(resp: GenerateContentResponse): string;
 /** The first generated image part, or null if the response carries none. */

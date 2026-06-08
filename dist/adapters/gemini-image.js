@@ -1,5 +1,5 @@
 import { LlmKitError } from "../errors.js";
-import { base64ToBytes, buildImageBody, extractImage, pngDimensions, } from "./gemini-body.js";
+import { base64ToBytes, buildImageBody, extractImage, pngDimensions, usageOf, } from "./gemini-body.js";
 import { geminiTransportFromContext, } from "./gemini-transport.js";
 /**
  * Build a Gemini image-generation adapter. Transport selected from `ctx` (Vertex
@@ -20,9 +20,7 @@ export function createGeminiImageProvider(ctx, opts) {
                 throw new LlmKitError("response_malformed", "image generation returned no image part");
             }
             const dims = pngDimensions(base64ToBytes(img.data));
-            const usage = resp.usageMetadata && Object.keys(resp.usageMetadata).length
-                ? resp.usageMetadata
-                : undefined;
+            const usage = usageOf(resp);
             return {
                 mimeType: img.mimeType,
                 data: img.data,

@@ -3,7 +3,7 @@
  * Asserts the behavior invariants extracted faithfully from habibi's
  * gateway.test.ts (mock streamChat / embed) plus the generate() aggregate seam.
  */
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import {
   createMockProvider,
   createMockVisionModel,

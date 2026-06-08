@@ -6,7 +6,7 @@
  * parsed over in-memory ReadableStreams. Asserts the behavior invariants extracted
  * faithfully from habibi's gateway.test.ts (SSE末帧/[DONE], embed自检, hooks).
  */
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test, mock } from "bun:test";
 import {
   createCloudflareProvider,
   cloudflareHooks,
@@ -114,7 +114,10 @@ describe("cloudflare provider — construction faults", () => {
   test("[inv38] missing ai binding → LlmKitError('missing_binding') (thrown, not a stream)", () => {
     let err: unknown;
     try {
-      createCloudflareProvider(ctx({ ai: undefined }), cloudflareHooks);
+      // ctx() omits the ai key entirely (it is naturally absent under
+      // exactOptionalPropertyTypes, where `{ ai: undefined }` is not assignable to
+      // `ai?: AiBinding`), so the missing_binding throw still fires.
+      createCloudflareProvider(ctx(), cloudflareHooks);
     } catch (e) {
       err = e;
     }
@@ -125,7 +128,7 @@ describe("cloudflare provider — construction faults", () => {
 
 describe("cloudflare provider — streamChat egress mapping", () => {
   test("[inv30,31,33,39] ai.run model/input/{gateway} are exactly right; parts → flat WAI messages", async () => {
-    const run = vi.fn(async () => streamOf(['data: {"response":"x"}\n\n']));
+    const run = mock(async () => streamOf(['data: {"response":"x"}\n\n']));
     const ai: AiBinding = { run: run as never };
     const provider = createCloudflareProvider(
       ctx({ ai, chatModel: "@cf/zai-org/glm-4.7-flash" }),
@@ -180,7 +183,7 @@ describe("cloudflare provider — streamChat egress mapping", () => {
   });
 
   test("[inv43] non-reasoning model → no extraChatInput key injected", async () => {
-    const run = vi.fn(async () => streamOf(["data: [DONE]\n\n"]));
+    const run = mock(async () => streamOf(["data: [DONE]\n\n"]));
     const provider = createCloudflareProvider(
       ctx({ ai: { run: run as never }, chatModel: "@cf/meta/llama-3.1-8b-instruct-fp8" }),
       cloudflareHooks,
@@ -198,7 +201,7 @@ describe("cloudflare provider — embed self-checks", () => {
   }
 
   test("[inv34,37] valid batch returns resp.data unchanged (text input key)", async () => {
-    const run = vi.fn(async () => ({
+    const run = mock(async () => ({
       data: [new Array(DIMS).fill(0.1), new Array(DIMS).fill(0.2)],
     }));
     const provider = createCloudflareProvider(

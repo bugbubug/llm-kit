@@ -1,20 +1,19 @@
 /**
- * Frozen-contract + core-purity + stream-helper seam tests.
+ * Stream-helper seam + error-philosophy tests.
  *
- *  - The root barrel re-exports exactly the frozen surface and does NOT pull zod
- *    or any runtime binding (invariants 54, 55).
- *  - Core purity: every file under src/ EXCEPT src/adapters/* imports none of
- *    @cloudflare/workers-types, node:*, hono, or any runtime binding (inv 54).
  *  - Stream helpers: defaultHooks == {}, normalizeStream default/truthy semantics,
  *    withRetry run-once, aggregateStream fold (invariants 7–12).
  *  - LlmKitError is thrown only for faults; recoverable upstream errors are DATA
  *    on a StreamChunk (inv 53).
+ *
+ * SURFACE OWNERSHIP: the frozen public export surface is now owned by
+ * @microsoft/api-extractor (etc/llm-kit.api.md, asserted by `bun run api:check`),
+ * which replaces the old hand-mirrored EXPECTED_EXPORTS / docs/FROZEN_CONTRACT.ts.
+ * CORE PURITY (the import-graph boundary) is now owned by ESLint
+ * (eslint.config.js no-restricted-imports, asserted by `bun run lint`), which
+ * replaces the old readdirSync+regex scan. Both moved OUT of this test file.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join, relative } from "node:path";
-import { describe, expect, test } from "vitest";
-import * as barrel from "../src/index.js";
+import { describe, expect, test } from "bun:test";
 import {
   defaultHooks,
   normalizeStream,
@@ -23,84 +22,6 @@ import {
   type ProviderHooks,
   type StreamChunk,
 } from "../src/index.js";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const SRC = join(HERE, "..", "src");
-
-// The exact frozen export surface (mirrors docs/FROZEN_CONTRACT.ts / src/index.ts).
-const EXPECTED_EXPORTS = [
-  // value exports (types are erased at runtime; only these survive)
-  "LlmKitError",
-  "parseSseFrames",
-  "defaultHooks",
-  "normalizeStream",
-  "withRetry",
-  "aggregateStream",
-  "assertGatewayEgress",
-  "isAllowedGatewayUrl",
-  "DEFAULT_CF_GATEWAY_PREFIXES",
-  "featureHashEmbed",
-  "createMockProvider",
-  "createCloudflareProvider",
-  "cloudflareHooks",
-  // v0.2.0 additive value exports (adapter factories + toProviderJsonSchema are
-  // intentionally NOT here — they live only on ./adapters/* and ./zod subpaths).
-  "createProviderRegistry",
-  "createMockVisionModel",
-  "createMockImageModel",
-].sort();
-
-describe("frozen barrel surface", () => {
-  test("[inv55] root barrel exports EXACTLY the frozen value surface (no more, no less)", () => {
-    const actual = Object.keys(barrel).sort();
-    expect(actual).toEqual(EXPECTED_EXPORTS);
-  });
-
-  test("[inv55] every frozen value export is defined", () => {
-    for (const name of EXPECTED_EXPORTS) {
-      expect((barrel as Record<string, unknown>)[name]).toBeDefined();
-    }
-  });
-});
-
-describe("core purity (HARD RULE) — import graph", () => {
-  const FORBIDDEN = [
-    /from\s+["']@cloudflare\/workers-types["']/,
-    /from\s+["']node:/,
-    /from\s+["']hono["']/,
-    /from\s+["']zod["']/, // the frozen core never imports zod (only src/zod.ts may)
-  ];
-
-  function tsFiles(dir: string): string[] {
-    const out: string[] = [];
-    for (const entry of readdirSync(dir)) {
-      const p = join(dir, entry);
-      if (statSync(p).isDirectory()) out.push(...tsFiles(p));
-      else if (entry.endsWith(".ts")) out.push(p);
-    }
-    return out;
-  }
-
-  test("[inv54] no src/ file except src/adapters/* and src/zod.ts imports a forbidden module", () => {
-    const offenders: string[] = [];
-    for (const file of tsFiles(SRC)) {
-      const rel = relative(SRC, file).replaceAll("\\", "/");
-      if (rel.startsWith("adapters/")) continue; // adapters are exempt
-      if (rel === "zod.ts") continue; // the only zod-importing module (optional subpath)
-      const text = readFileSync(file, "utf8");
-      for (const re of FORBIDDEN) {
-        if (re.test(text)) offenders.push(`${rel} :: ${re}`);
-      }
-    }
-    expect(offenders).toEqual([]);
-  });
-
-  test("[inv55] the frozen barrel src/index.ts does NOT import zod", () => {
-    const text = readFileSync(join(SRC, "index.ts"), "utf8");
-    expect(/from\s+["']zod["']/.test(text)).toBe(false);
-    expect(/from\s+["'].*\/zod\.js["']/.test(text)).toBe(false);
-  });
-});
 
 describe("stream helpers", () => {
   test("[inv7] defaultHooks deep-equals {}", () => {

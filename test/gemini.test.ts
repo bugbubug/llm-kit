@@ -14,7 +14,7 @@
  *  - usage passthrough;
  *  - maxTokens → maxOutputTokens.
  */
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test, spyOn } from "bun:test";
 import { createGeminiProvider } from "../src/adapters/gemini.js";
 import { createGeminiImageProvider } from "../src/adapters/gemini-image.js";
 import type { GeminiTransport } from "../src/adapters/gemini-transport.js";
@@ -249,7 +249,7 @@ describe("gemini image generation — raw bytes, no assetKey", () => {
 
 describe("gemini — zero real egress (fetch is never called with a fake transport)", () => {
   test("a fake transport means global fetch is untouched", async () => {
-    const spy = vi.spyOn(globalThis, "fetch");
+    const spy = spyOn(globalThis, "fetch");
     const { transport } = fakeTransport(textResp("ok"));
     const gw = createGeminiProvider(CTX, { transport });
     await gw.generate(chatReq());

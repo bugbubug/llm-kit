@@ -18,6 +18,7 @@ import {
   buildImageBody,
   extractImage,
   pngDimensions,
+  usageOf,
 } from "./gemini-body.js";
 import {
   geminiTransportFromContext,
@@ -61,10 +62,7 @@ export function createGeminiImageProvider(
         );
       }
       const dims = pngDimensions(base64ToBytes(img.data));
-      const usage =
-        resp.usageMetadata && Object.keys(resp.usageMetadata).length
-          ? resp.usageMetadata
-          : undefined;
+      const usage = usageOf(resp);
       return {
         mimeType: img.mimeType,
         data: img.data,

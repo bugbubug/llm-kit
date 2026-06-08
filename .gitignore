@@ -3,3 +3,6 @@ coverage
 *.log
 .dev.vars
 .DS_Store
+
+# api-extractor working copy (the committed report lives in etc/llm-kit.api.md)
+temp

@@ -14,6 +14,7 @@ import type { GenerateContentResponse } from "./gemini-body.js";
 import type { ProviderContext, TokenCache } from "../ports.js";
 import { LlmKitError } from "../errors.js";
 import { mintJwt, exchangeToken, type ServiceAccount } from "./gemini-jwt.js";
+import { MemoryTokenCache } from "./memory-token-cache.js";
 
 export interface GeminiTransport {
   generateContent(model: string, body: unknown): Promise<GenerateContentResponse>;
@@ -113,24 +114,9 @@ export class DeveloperApiTransport implements GeminiTransport {
 // ── Channel selection from ProviderContext ──────────────────────────────────
 // In-memory TokenCache fallback when ctx.vertex is set but no tokenCache was
 // injected (so the Vertex channel still works in Node/tests without forcing the
-// consumer to wire a cache). Lives inline here to keep the Vertex channel
-// self-contained; the consumer normally injects a KV-backed TokenCache.
-class InlineMemoryTokenCache implements TokenCache {
-  private store = new Map<string, { value: string; expiresAt: number }>();
-  constructor(private readonly now: () => number = () => Date.now()) {}
-  async get(key: string): Promise<string | null> {
-    const entry = this.store.get(key);
-    if (!entry) return null;
-    if (entry.expiresAt <= this.now()) {
-      this.store.delete(key);
-      return null;
-    }
-    return entry.value;
-  }
-  async put(key: string, value: string, ttlSeconds: number): Promise<void> {
-    this.store.set(key, { value, expiresAt: this.now() + ttlSeconds * 1000 });
-  }
-}
+// consumer to wire a cache). Reuses the shared MemoryTokenCache (identical
+// semantics) instead of a byte-for-byte inline copy; the consumer normally
+// injects a KV-backed TokenCache.
 
 /**
  * Build a GeminiTransport from a ProviderContext. Precedence (the CONSUMER's
@@ -151,7 +137,7 @@ export function geminiTransportFromContext(
       saJson: ctx.vertex.saJson,
       projectId: ctx.vertex.projectId,
       location: ctx.vertex.location,
-      tokenCache: ctx.tokenCache ?? new InlineMemoryTokenCache(overrides?.now),
+      tokenCache: ctx.tokenCache ?? new MemoryTokenCache(overrides?.now),
       ...(overrides?.now ? { now: overrides.now } : {}),
       ...(overrides?.fetchImpl ? { fetchImpl: overrides.fetchImpl } : {}),
     });

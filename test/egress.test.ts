@@ -5,7 +5,7 @@
  * construction invariant) — but here as a standalone OPT-IN helper the consumer
  * calls, never baked into provider construction.
  */
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import {
   assertGatewayEgress,
   isAllowedGatewayUrl,

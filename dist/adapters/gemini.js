@@ -1,10 +1,5 @@
-import { buildTextBody, buildVisionBody, extractText, } from "./gemini-body.js";
+import { buildTextBody, buildVisionBody, extractText, usageOf, } from "./gemini-body.js";
 import { geminiTransportFromContext, } from "./gemini-transport.js";
-function usageOf(resp) {
-    return resp.usageMetadata && Object.keys(resp.usageMetadata).length
-        ? resp.usageMetadata
-        : undefined;
-}
 function safeJson(text) {
     try {
         return JSON.parse(text);

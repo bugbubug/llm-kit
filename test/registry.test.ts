@@ -8,7 +8,7 @@
  *  - STRUCTURAL: create's signature is (name, ctx, hooks) — there is NO
  *    (productId, tier) / route / fallback knowledge in the registry surface.
  */
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import {
   createProviderRegistry,
   createMockProvider,

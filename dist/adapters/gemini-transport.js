@@ -1,5 +1,6 @@
 import { LlmKitError } from "../errors.js";
 import { mintJwt, exchangeToken } from "./gemini-jwt.js";
+import { MemoryTokenCache } from "./memory-token-cache.js";
 async function send(fetchImpl, url, headers, body) {
     const resp = await fetchImpl(url, {
         method: "POST",
@@ -61,28 +62,9 @@ export class DeveloperApiTransport {
 // ── Channel selection from ProviderContext ──────────────────────────────────
 // In-memory TokenCache fallback when ctx.vertex is set but no tokenCache was
 // injected (so the Vertex channel still works in Node/tests without forcing the
-// consumer to wire a cache). Lives inline here to keep the Vertex channel
-// self-contained; the consumer normally injects a KV-backed TokenCache.
-class InlineMemoryTokenCache {
-    now;
-    store = new Map();
-    constructor(now = () => Date.now()) {
-        this.now = now;
-    }
-    async get(key) {
-        const entry = this.store.get(key);
-        if (!entry)
-            return null;
-        if (entry.expiresAt <= this.now()) {
-            this.store.delete(key);
-            return null;
-        }
-        return entry.value;
-    }
-    async put(key, value, ttlSeconds) {
-        this.store.set(key, { value, expiresAt: this.now() + ttlSeconds * 1000 });
-    }
-}
+// consumer to wire a cache). Reuses the shared MemoryTokenCache (identical
+// semantics) instead of a byte-for-byte inline copy; the consumer normally
+// injects a KV-backed TokenCache.
 /**
  * Build a GeminiTransport from a ProviderContext. Precedence (the CONSUMER's
  * channel choice, expressed via ctx — NOT an SDK policy):
@@ -99,7 +81,7 @@ export function geminiTransportFromContext(ctx, overrides) {
             saJson: ctx.vertex.saJson,
             projectId: ctx.vertex.projectId,
             location: ctx.vertex.location,
-            tokenCache: ctx.tokenCache ?? new InlineMemoryTokenCache(overrides?.now),
+            tokenCache: ctx.tokenCache ?? new MemoryTokenCache(overrides?.now),
             ...(overrides?.now ? { now: overrides.now } : {}),
             ...(overrides?.fetchImpl ? { fetchImpl: overrides.fetchImpl } : {}),
         });

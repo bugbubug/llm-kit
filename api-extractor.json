@@ -1,0 +1,56 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/api-extractor/v7/api-extractor.schema.json",
+
+  /**
+   * The frozen PUBLIC surface of @bugbubug/llm-kit is the core barrel
+   * (dist/index.d.ts). api-extractor reads that .d.ts and emits an API report to
+   * etc/llm-kit.api.md — the AUTHORITATIVE, committed freeze baseline that
+   * replaces the old hand-mirrored docs/FROZEN_CONTRACT.ts. `bun run api:check`
+   * fails if the live surface drifts from the committed report (additive-only is
+   * still allowed via `bun run api:update` re-baselining + review).
+   *
+   * Off-barrel subpaths (./adapters/*, ./zod, ./mock) are intentionally NOT part
+   * of this primary report — dist/index.d.ts re-exports none of them, so the
+   * report captures exactly the core index surface.
+   */
+  "mainEntryPointFilePath": "<projectFolder>/dist/index.d.ts",
+
+  "apiReport": {
+    "enabled": true,
+    "reportFolder": "<projectFolder>/etc/",
+    "reportFileName": "llm-kit.api.md"
+  },
+
+  "docModel": {
+    "enabled": false
+  },
+
+  "dtsRollup": {
+    "enabled": false
+  },
+
+  "tsdocMetadata": {
+    "enabled": false
+  },
+
+  "messages": {
+    "compilerMessageReporting": {
+      "default": {
+        "logLevel": "warning"
+      }
+    },
+    "extractorMessageReporting": {
+      "default": {
+        "logLevel": "warning"
+      },
+      "ae-missing-release-tag": {
+        "logLevel": "none"
+      }
+    },
+    "tsdocMessageReporting": {
+      "default": {
+        "logLevel": "none"
+      }
+    }
+  }
+}

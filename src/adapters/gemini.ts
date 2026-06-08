@@ -32,7 +32,7 @@ import {
   buildTextBody,
   buildVisionBody,
   extractText,
-  type GenerateContentResponse,
+  usageOf,
 } from "./gemini-body.js";
 import {
   geminiTransportFromContext,
@@ -45,14 +45,6 @@ export interface GeminiProviderOptions {
   transport?: GeminiTransport;
   fetchImpl?: typeof fetch;
   now?: () => number;
-}
-
-function usageOf(
-  resp: GenerateContentResponse,
-): Record<string, number> | undefined {
-  return resp.usageMetadata && Object.keys(resp.usageMetadata).length
-    ? resp.usageMetadata
-    : undefined;
 }
 
 function safeJson(text: string): unknown {

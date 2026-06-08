@@ -11,7 +11,7 @@
  *  - model fallback to ctx.chatModel; baseUrl default + trailing-slash strip;
  *  - thinking is a NO-OP (no thinkingBudget / thinkingConfig in the body).
  */
-import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "bun:test";
 import { createOpenRouterProvider, toOpenRouterBody } from "../src/adapters/openrouter.js";
 import type { ChatRequest, ProviderContext, StreamChunk } from "../src/index.js";
 

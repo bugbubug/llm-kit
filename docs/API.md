@@ -1,9 +1,10 @@
 # API reference — @bugbubug/llm-kit (v0.2.1)
 
-The authoritative surface is [`FROZEN_CONTRACT.ts`](./FROZEN_CONTRACT.ts),
-mirrored verbatim by `src/index.ts`. This document describes every export with
-its semantics + a short usage snippet. The contract is **additive-only**; nothing
-here is removed or retyped without a new tag. v0.2.x is strictly additive over
+The authoritative surface is the **API Extractor** report
+[`etc/llm-kit.api.md`](../etc/llm-kit.api.md), generated from `src/index.ts`'s
+compiled `.d.ts` and enforced by `bun run api:check`. This document describes every
+export with its semantics + a short usage snippet. The contract is
+**additive-only**; nothing here is removed or retyped without a new tag. v0.2.x is strictly additive over
 v0.1.0 — every change is a new optional field or a new type/value/subpath export,
 so a consumer pinned to v0.1.0 (habibi) is unaffected. v0.2.1 keeps the v0.2.0
 **surface identical**; it is a behavior-only change (the mock's `generate()`
@@ -427,7 +428,8 @@ no-retry.
 ```ts
 type LlmKitErrorCode =
   | "missing_binding" | "egress_not_allowed" | "dim_mismatch" | "count_mismatch"
-  | "unknown_provider" | "provider_not_configured" | "config_invalid";
+  | "unknown_provider" | "provider_not_configured" | "config_invalid"
+  | "upstream_error" | "response_malformed"; // v0.2.2 additive
 
 class LlmKitError extends Error {
   readonly code: LlmKitErrorCode;
@@ -448,6 +450,8 @@ as `StreamChunk.error`. Same philosophy as auth-kit's `AuthKitError`.
 | `config_invalid` | Bad config — e.g. `featureHashEmbed` with non-positive-integer dims. |
 | `unknown_provider` | *(v0.2.0)* `createProviderRegistry().create(name, …)` called with a name that was never `register`ed. |
 | `provider_not_configured` | *(v0.2.0)* A registered **placeholder** factory throws it (the registry does not distinguish — both codes already existed in the frozen union). Also thrown by the Gemini transport when neither `ctx.vertex` nor `ctx.http.apiKey` is set. |
+| `upstream_error` | *(v0.2.2)* An upstream HTTP 4xx/5xx (or a connect-phase `ai.run()` rejection). On `streamChat` this is delivered as a `StreamChunk.error` chunk, never thrown (v0.2.3); `aggregateStream` rethrows a non-empty `error` chunk as `LlmKitError("upstream_error")`, so `generate()` stays success-or-throw. |
+| `response_malformed` | *(v0.2.2)* A successful HTTP response whose body cannot be parsed into the expected shape (e.g. image-gen returned no image part). |
 
 ---
 
@@ -836,10 +840,12 @@ A Gemini image-**generation** adapter (`ImageModel.generate` only), same
 dual-channel transport. Inherently non-streaming: one `:generateContent` POST with
 `responseModalities: ["TEXT","IMAGE"]` (+ optional `responseFormat.image`
 aspectRatio/imageSize), picks the first `inlineData` part, reads width/height from
-the PNG IHDR (default `1024×1024` if not a PNG), and returns **raw**
-`{ mimeType, data (base64), width, height, usage? }`. **NO `assetKey`, NO R2, NO
-storage** — persistence is the consumer's job; throws if the response carries no
-image part.
+the PNG IHDR, and returns **raw** `{ mimeType, data (base64), width?, height?,
+usage? }`. **`width`/`height` are OMITTED** when the bytes are not a parseable PNG
+header (`pngDimensions` returns `null`) — there is **no guessed `1024×1024`
+default** (v0.2.2). **NO `assetKey`, NO R2, NO storage** — persistence is the
+consumer's job; the adapter throws `LlmKitError("response_malformed")` if the
+response carries no image part.
 
 ```ts
 import { createGeminiProvider, createGeminiImageProvider } from "@bugbubug/llm-kit/adapters/gemini";
