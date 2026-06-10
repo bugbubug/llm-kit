@@ -5,7 +5,10 @@ multimodal request IR + a set of capability ports
 (`ChatModel` / `Embedder` / `VisionModel` / `ImageModel`) + a family of egress
 adapters — **Cloudflare Workers AI** (text + vision since v0.3.0), **Gemini**
 (dual-channel Vertex / Developer API, text + vision + image-gen),
-**OpenRouter**, and a **deterministic, configurable mock**. That is the entire job.
+**OpenRouter**, **GCP Agent Platform** (since v0.4.0 — the OpenAI-compatible
+chat-completions surface of the platform formerly named Vertex AI; serves
+publisher-prefixed partner models like `xai/grok-…` with native SSE streaming),
+and a **deterministic, configurable mock**. That is the entire job.
 
 It began as a faithful **extraction** of habibi's working LLM gateway internals
 (v0.1.0); v0.2.x lifts the proven non-streaming, multi-provider engine out of a
@@ -89,7 +92,7 @@ any consumer gets prebuilt types and JS with no build step. Pin it by **immutabl
 git tag**:
 
 ```bash
-pnpm add github:bugbubug/llm-kit#v0.2.4
+pnpm add github:bugbubug/llm-kit#v0.4.0
 ```
 
 Export subpaths:
@@ -99,6 +102,7 @@ import { /* IR types, ports, mock, registry, helpers, errors */ } from "@bugbubu
 import { createCloudflareProvider, createCloudflareNonStreamingProvider, cloudflareHooks, MemoryTokenCache } from "@bugbubug/llm-kit/adapters/cloudflare";
 import { createGeminiProvider, createGeminiImageProvider } from "@bugbubug/llm-kit/adapters/gemini";
 import { createOpenRouterProvider } from "@bugbubug/llm-kit/adapters/openrouter";
+import { createAgentPlatformProvider, createGcpTokenSource } from "@bugbubug/llm-kit/adapters/agent-platform"; // v0.4.0
 import { createMockProvider, createMockVisionModel, createMockImageModel } from "@bugbubug/llm-kit/mock";
 import { /* zod schemas, toProviderJsonSchema */ } from "@bugbubug/llm-kit/zod"; // optional; imports the zod peer
 ```
@@ -117,6 +121,7 @@ The **core barrel is zero-dependency and runtime-pure** (no `node:`, no
 | Gemini text+vision | `createGeminiProvider` | `ChatModel & VisionModel` | **Dual-channel**: Vertex (`ctx.vertex` SA-JSON → JWT → OAuth, token-cached) **or** Developer API (`ctx.http.apiKey`) |
 | Gemini image-gen | `createGeminiImageProvider` | `ImageModel` (raw bytes, no storage) | same dual-channel |
 | OpenRouter | `createOpenRouterProvider` | `LlmProvider` (native `stream:false`) | `ctx.http.apiKey` + base URL (optionally via CF AI Gateway) |
+| GCP Agent Platform *(v0.4.0)* | `createAgentPlatformProvider` | `ChatModel` (**native SSE** `streamChat` **and** native `stream:false` `generate`) | `ctx.vertex` SA-JSON → JWT → OAuth (shared `createGcpTokenSource`, token-cached); OpenAI-compat `…/endpoints/openapi/chat/completions` |
 | Mock | `createMockProvider` / `createMockVisionModel` / `createMockImageModel` | all ports | none — deterministic, zero egress |
 
 All real adapters consume the same `ProviderContext`:
@@ -126,8 +131,8 @@ interface ProviderContext {
   name: string; chatModel: string; embedModel: string; embeddingDims: number;
   gatewayId?: string; ai?: AiBinding;                          // Cloudflare
   http?: { baseUrl: string; apiKey: string; accountId?: string }; // Gemini-Developer / OpenRouter
-  tokenCache?: TokenCache;                                      // v0.2.0 — Vertex OAuth cache
-  vertex?: { saJson: string; projectId: string; location: string }; // v0.2.0 — Vertex channel
+  tokenCache?: TokenCache;                                      // v0.2.0 — GCP OAuth cache (Gemini-Vertex + Agent Platform)
+  vertex?: { saJson: string; projectId: string; location: string }; // v0.2.0 — GCP SA channel (name is historical; Agent Platform reuses it)
 }
 ```
 
@@ -141,6 +146,9 @@ interface ProviderContext {
   is a thin single-chunk async generator wrapping that result.
 - **Streaming-native** (the original Cloudflare adapter, the mock): `streamChat` is
   the primitive; `generate` aggregates it.
+- **Both-native** *(v0.4.0, Agent Platform)*: the endpoint speaks both channels, so
+  `streamChat` is REAL SSE and `generate` is a native `stream:false` POST — neither
+  method is derived from the other.
 
 Either way the call site is identical, so a consumer that is fully non-streaming
 (like emo) just calls `generate` and never touches SSE.
@@ -240,6 +248,17 @@ from that baseline). It is **additive-only**.
   / `TokenCache` / `ProviderRegistry` ports; configurable injectable mock.
 - **v0.2.1** — additive: the mock's `generate()` returns resolver fixtures
   verbatim + a `usage:{mock:1}` marker (lossless for non-streaming consumers).
+- **v0.2.2–v0.2.5** — hardening + packaging: stream-cancel leak fix (P0), typed
+  `upstream_error` / `response_malformed`, errors-as-data on every streaming path,
+  Unicode embed tokenization, `hooks.retry` honored, spec-correct SSE parser,
+  cloudflare-only `./adapters/cloudflare` + the `./adapters` everything-barrel.
+- **v0.3.0** — Cloudflare goes multimodal: both factories implement `VisionModel`;
+  image parts ship as OpenAI-compat base64 `data:` URLs (no more `[image]` downgrade).
+- **v0.4.0** — GCP **Agent Platform** adapter (`./adapters/agent-platform`):
+  OpenAI-compat chat-completions for publisher-prefixed models (`xai/…`,
+  `google/…`), **native SSE streaming AND native non-streaming**, plus the shared
+  `createGcpTokenSource` SA→OAuth seam (extracted from the Vertex Gemini
+  transport, same cache key/TTL). Frozen root surface unchanged.
 
 > **Tags are immutable.** Never force-move a tag. Any change ships as a new tag and
 > consumers bump their pin. Because every v0.2.x change is additive, a consumer

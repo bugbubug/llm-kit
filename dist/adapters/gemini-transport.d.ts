@@ -8,7 +8,9 @@
  * providers stay transport-agnostic, swapping the channel behind this interface.
  *
  * Adapter file (exempt from the core-purity scan). Uses ONLY the global `fetch`
- * + WebCrypto (via gemini-jwt); NEVER a `node:` import.
+ * + WebCrypto (via gcp-token → gemini-jwt); NEVER a `node:` import. The SA
+ * token minting/caching lives in the reusable createGcpTokenSource
+ * (gcp-token.ts) — shared with the Agent Platform adapter.
  */
 import type { GenerateContentResponse } from "./gemini-body.js";
 import type { ProviderContext, TokenCache } from "../ports.js";
@@ -26,12 +28,15 @@ export interface VertexTransportConfig {
 }
 export declare class VertexTransport implements GeminiTransport {
     private readonly cfg;
-    private readonly sa;
-    private readonly now;
     private readonly fetchImpl;
+    /**
+     * SA-minted OAuth Bearer source — the token logic extracted VERBATIM to
+     * createGcpTokenSource (gcp-token.ts) so the Agent Platform adapter can
+     * share it. The construction-time JSON.parse(saJson) (throw unwrapped), the
+     * `vertex_token:${client_email}` cache key, and the TTL math are unchanged.
+     */
+    private readonly accessToken;
     constructor(cfg: VertexTransportConfig);
-    private get cacheKey();
-    private accessToken;
     generateContent(model: string, body: unknown): Promise<GenerateContentResponse>;
 }
 export interface DeveloperApiTransportConfig {

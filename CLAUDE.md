@@ -119,6 +119,44 @@ its own contracts at the boundary.
 >    text-model callers are unaffected. A consumer that (incorrectly) sent
 >    images to a text-only Workers AI model now gets the model's own input
 >    error instead of a silent `[image]` degrade.
+>
+> **v0.4.0 (GCP Agent Platform adapter — additive; frozen root surface unchanged):**
+> 1. NEW off-barrel adapter `./adapters/agent-platform` —
+>    `createAgentPlatformProvider(ctx, opts?) → ChatModel`. Google renamed
+>    Vertex AI to "Gemini Enterprise Agent Platform" (2026; the API host is
+>    unchanged), so the adapter carries the NEW product name — "vertex" stays
+>    only on the historical `ctx.vertex` field + Gemini transport. It speaks the
+>    OpenAI-compatible chat-completions endpoint
+>    (`https://{host}/v1/projects/{P}/locations/{loc}/endpoints/openapi/chat/completions`;
+>    host = bare `aiplatform.googleapis.com` for `location:"global"`, else the
+>    region-prefixed `{loc}-aiplatform.googleapis.com`). Model ids pass through
+>    VERBATIM with their publisher prefix (`"xai/grok-…"`, `"google/gemini-…"`) —
+>    NO model names / publisher logic in the SDK. `thinking` is a documented
+>    NO-OP (no portable reasoning knob in this dialect; reasoning depth = the
+>    consumer's model-variant choice). ChatModel ONLY this release (no
+>    embed/vision — a later upgrade adds them without reshaping the factory).
+> 2. **BOTH ChatModel methods are NATIVE here** (a deliberate evolution of rule
+>    6's "one primitive, one derived"): `streamChat` is REAL SSE (`stream:true`
+>    POST → `parseSseFrames` → `choices[0].delta.content`; connect failures and
+>    mid-stream `{"error":…}` frames are `{error}` chunks, never thrown;
+>    early-break cancels the body stream with the rejection-swallowing v0.2.3
+>    pattern) and `generate` is a native `stream:false` single JSON POST
+>    (success-or-throw, `upstream_error`/`response_malformed`) with numeric-only
+>    usage extraction.
+> 3. The SA-JSON → JWT → OAuth token minting/caching is EXTRACTED
+>    (behavior-preserving) from `VertexTransport.accessToken()` into the shared
+>    `createGcpTokenSource` (`adapters/gcp-token.ts`) — frozen compat: cache key
+>    stays `vertex_token:${client_email}`, TTL math stays
+>    `max(60, min(expiresIn-60, 3300))`, construction-time `JSON.parse(saJson)`
+>    throw unwrapped. `VertexTransport` now delegates to it; both adapters share
+>    one KV-cacheable token. Also surfaced on `./adapters/agent-platform` + the
+>    `./adapters` barrel.
+> 4. NEW shared `adapters/openai-compat.ts` (pure wire helpers: body builder
+>    with the v0.3.0 multimodal mapping — flat string for text-only turns,
+>    content-part array with base64 `data:` URLs for image turns — + lenient
+>    text/usage/delta/error-frame extractors). OpenRouter is deliberately NOT
+>    migrated onto it: its `[image]` placeholder downgrade is frozen v0.2.x
+>    behavior, `openrouter.ts` is byte-untouched.
 
 Behavior is **preserved from habibi**, not redesigned (v0.3.0's Cloudflare
 vision is the first capability habibi never had — it follows the Gemini
@@ -150,22 +188,28 @@ src/
     cloudflare-hooks.ts  cloudflareHooks (maxTokens default, GLM enable_thinking, chunk normalize)
     gemini.ts            v0.2.0 createGeminiProvider (ChatModel & VisionModel; non-streaming generate + single-chunk streamChat) (+ re-exports image factory)
     gemini-image.ts      v0.2.0 createGeminiImageProvider (ImageModel; raw bytes+meta, NO storage)
-    gemini-transport.ts  v0.2.0 GeminiTransport: Vertex (SA-JSON→JWT→OAuth, token-cached) + Developer-API; geminiTransportFromContext
+    gemini-transport.ts  v0.2.0 GeminiTransport: Vertex (SA-JSON→JWT→OAuth via gcp-token, token-cached) + Developer-API; geminiTransportFromContext
     gemini-jwt.ts        v0.2.0 SA JWT signing (WebCrypto only, NO node:Buffer)
     gemini-body.ts       v0.2.0 pure Gemini wire builders/extractors (thinking level-only, JSON mode, extractText drops thought:true, pngDimensions)
     openrouter.ts        v0.2.0 createOpenRouterProvider (ChatModel; stream:false generate + single-chunk streamChat) + toOpenRouterBody
+    agent-platform.ts    v0.4.0 createAgentPlatformProvider (ChatModel; NATIVE SSE streamChat + NATIVE stream:false generate;
+                         OpenAI-compat endpoints/openapi chat-completions, global vs region-prefixed host) — the "./adapters/agent-platform" subpath
+    gcp-token.ts         v0.4.0 createGcpTokenSource — shared SA-JSON→JWT→OAuth token source (extracted from VertexTransport; frozen cache key/TTL)
+    openai-compat.ts     v0.4.0 pure OpenAI-compat wire helpers (multimodal body builder + lenient text/usage/delta/error extractors)
     memory-token-cache.ts v0.2.0 MemoryTokenCache (pure in-memory TokenCache default)
-    index.ts             adapters EVERYTHING barrel — the "./adapters" subpath (all adapter factories + MemoryTokenCache)
-test/               bun:test — mock, cloudflare (+ SSE + hooks), egress, contract (stream-helper + error-philosophy), gemini, openrouter, registry
+    index.ts             adapters EVERYTHING barrel — the "./adapters" subpath (all adapter factories + MemoryTokenCache + gcp-token seam)
+test/               bun:test — mock, cloudflare (+ SSE + hooks), egress, contract (stream-helper + error-philosophy), gemini, openrouter, registry,
+                    agent-platform (real-SSE/error-chunk/cancel/host-rule), gcp-token (real WebCrypto RSA keygen + cache invariants)
                     + zod-mirror.type-test.ts (typecheck-only types.ts<->zod.ts drift guard; NOT executed by `bun test`)
 etc/                llm-kit.api.md — AUTHORITATIVE frozen surface report (generated by @microsoft/api-extractor; `bun run api:check` asserts no drift)
 docs/               API.md (full per-export reference)
 ```
 
 The v0.2.0 adapter factories (`createGeminiProvider`/`createGeminiImageProvider`/
-`createOpenRouterProvider`/`createCloudflareNonStreamingProvider`),
-`MemoryTokenCache`, and `toProviderJsonSchema` are deliberately **OFF** the core
-barrel (`src/index.ts`) — they live ONLY on the `./adapters/*` and `./zod`
+`createOpenRouterProvider`/`createCloudflareNonStreamingProvider`), the v0.4.0
+`createAgentPlatformProvider`/`createGcpTokenSource`, `MemoryTokenCache`, and
+`toProviderJsonSchema` are deliberately **OFF** the core barrel (`src/index.ts`) —
+they live ONLY on the `./adapters/*` and `./zod`
 subpaths, so the core import-graph stays adapter-free + zod-free and the purity
 scans stay green by construction. The root barrel adds only three new VALUE
 exports (`createProviderRegistry`, `createMockVisionModel`, `createMockImageModel`)
@@ -258,11 +302,15 @@ IR (a drift fails `bun run typecheck`).
    adapters (Gemini / OpenRouter / `createCloudflareNonStreamingProvider`)
    `generate` is the native primitive (one JSON call, no SSE) and `streamChat` is a
    single-chunk wrapper. Either method may be the "real" one; the other is derived —
-   same signatures, no call-site change.
+   same signatures, no call-site change. The v0.4.0 Agent Platform adapter adds a
+   THIRD pattern: its endpoint natively speaks both channels, so BOTH methods are
+   native (`streamChat` = real SSE, `generate` = `stream:false` single POST) —
+   neither is derived, and the error philosophy (rule 2) holds for each
+   independently.
 
 ## How a consumer wires it
 
-Installs by **git tag** (`pnpm add github:bugbubug/llm-kit#v0.2.5`) and consumes
+Installs by **git tag** (`pnpm add github:bugbubug/llm-kit#v0.4.0`) and consumes
 the committed **`dist/` (ESM `.js` + `.d.ts`)** — its `tsc` reads the shipped
 `.d.ts` (the kit's strictness never leaks into the consumer's typecheck), its
 bundler (wrangler/esbuild) bundles the `.js`. Rebuild `dist` with `bun run build`

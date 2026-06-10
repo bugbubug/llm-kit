@@ -8,12 +8,14 @@
  * providers stay transport-agnostic, swapping the channel behind this interface.
  *
  * Adapter file (exempt from the core-purity scan). Uses ONLY the global `fetch`
- * + WebCrypto (via gemini-jwt); NEVER a `node:` import.
+ * + WebCrypto (via gcp-token → gemini-jwt); NEVER a `node:` import. The SA
+ * token minting/caching lives in the reusable createGcpTokenSource
+ * (gcp-token.ts) — shared with the Agent Platform adapter.
  */
 import type { GenerateContentResponse } from "./gemini-body.js";
 import type { ProviderContext, TokenCache } from "../ports.js";
 import { LlmKitError } from "../errors.js";
-import { mintJwt, exchangeToken, type ServiceAccount } from "./gemini-jwt.js";
+import { createGcpTokenSource, type GcpTokenSource } from "./gcp-token.js";
 import { MemoryTokenCache } from "./memory-token-cache.js";
 
 export interface GeminiTransport {
@@ -54,29 +56,23 @@ export interface VertexTransportConfig {
 const VERTEX_BASE = "https://aiplatform.googleapis.com/v1";
 
 export class VertexTransport implements GeminiTransport {
-  private readonly sa: ServiceAccount;
-  private readonly now: () => number;
   private readonly fetchImpl: typeof fetch;
+  /**
+   * SA-minted OAuth Bearer source — the token logic extracted VERBATIM to
+   * createGcpTokenSource (gcp-token.ts) so the Agent Platform adapter can
+   * share it. The construction-time JSON.parse(saJson) (throw unwrapped), the
+   * `vertex_token:${client_email}` cache key, and the TTL math are unchanged.
+   */
+  private readonly accessToken: GcpTokenSource;
 
   constructor(private readonly cfg: VertexTransportConfig) {
-    this.sa = JSON.parse(cfg.saJson) as ServiceAccount;
-    this.now = cfg.now ?? (() => Date.now());
     this.fetchImpl = cfg.fetchImpl ?? fetch;
-  }
-
-  private get cacheKey(): string {
-    return `vertex_token:${this.sa.client_email}`;
-  }
-
-  private async accessToken(): Promise<string> {
-    const cached = await this.cfg.tokenCache.get(this.cacheKey);
-    if (cached) return cached;
-    const jwt = await mintJwt(this.sa, Math.floor(this.now() / 1000));
-    const { accessToken, expiresIn } = await exchangeToken(jwt, this.fetchImpl);
-    // Cache a little short of expiry (~55 min for a 1h token) to avoid edge misses.
-    const ttl = Math.max(60, Math.min(expiresIn - 60, 3300));
-    await this.cfg.tokenCache.put(this.cacheKey, accessToken, ttl);
-    return accessToken;
+    this.accessToken = createGcpTokenSource({
+      saJson: cfg.saJson,
+      tokenCache: cfg.tokenCache,
+      ...(cfg.now ? { now: cfg.now } : {}),
+      ...(cfg.fetchImpl ? { fetchImpl: cfg.fetchImpl } : {}),
+    });
   }
 
   async generateContent(model: string, body: unknown): Promise<GenerateContentResponse> {

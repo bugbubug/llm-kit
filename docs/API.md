@@ -1,4 +1,4 @@
-# API reference — @bugbubug/llm-kit (v0.3.0)
+# API reference — @bugbubug/llm-kit (v0.4.0)
 
 The authoritative surface is the **API Extractor** report
 [`etc/llm-kit.api.md`](../etc/llm-kit.api.md), generated from `src/index.ts`'s
@@ -13,7 +13,11 @@ the frozen root surface identical again — it is a behavior/packaging pass: Uni
 `hooks.retry` actually honored by the Cloudflare factories, the AI Gateway
 option omitted when `ctx.gatewayId` is unset, a spec-correct line-based SSE
 parser, and the `./adapters/cloudflare` subpath narrowed to the cloudflare-only
-module (the everything-barrel moved to the new `./adapters` subpath).
+module (the everything-barrel moved to the new `./adapters` subpath). v0.4.0
+adds the off-barrel **GCP Agent Platform** adapter (§11b) — OpenAI-compatible
+chat-completions against `…/endpoints/openapi`, NATIVE SSE streaming + NATIVE
+non-streaming — plus the shared `createGcpTokenSource` auth seam; the frozen
+root surface is again unchanged.
 
 Root imports:
 
@@ -32,10 +36,12 @@ import {
 import {
   createCloudflareProvider, createCloudflareNonStreamingProvider, cloudflareHooks,
   createGeminiProvider, createGeminiImageProvider, createOpenRouterProvider,
+  createAgentPlatformProvider, createGcpTokenSource,
   MemoryTokenCache,
 } from "@bugbubug/llm-kit/adapters";
 import { createGeminiProvider, createGeminiImageProvider } from "@bugbubug/llm-kit/adapters/gemini";
 import { createOpenRouterProvider, toOpenRouterBody } from "@bugbubug/llm-kit/adapters/openrouter";
+import { createAgentPlatformProvider, createGcpTokenSource } from "@bugbubug/llm-kit/adapters/agent-platform"; // v0.4.0
 import { createMockProvider, createMockVisionModel, createMockImageModel } from "@bugbubug/llm-kit/mock";
 import { ChatRequestSchema, /* …schemas… */ toProviderJsonSchema } from "@bugbubug/llm-kit/zod"; // optional; the ONLY zod-importing module
 ```
@@ -47,7 +53,8 @@ ports + the stream/egress/embed helpers + the mock factories
 (`createCloudflareProvider` / `cloudflareHooks`), all also reachable from
 `@bugbubug/llm-kit/adapters/cloudflare`. The **v0.2.0 adapter factories**
 (`createCloudflareNonStreamingProvider`, the Gemini text+vision / image-gen
-factories, the OpenRouter factory, `MemoryTokenCache`) and the
+factories, the OpenRouter factory, `MemoryTokenCache`), the **v0.4.0 Agent
+Platform factory + GCP token seam**, and the
 `toProviderJsonSchema` helper are deliberately kept **OFF** the core barrel — they
 live only on the `./adapters`/`./adapters/*` and `./zod` subpaths, so the core
 import-graph stays adapter-free and zod-free. Since v0.2.5,
@@ -369,8 +376,8 @@ interface ProviderContext {
   gatewayId?: string;                                  // AI Gateway id (binding egress anchor)
   ai?: AiBinding;                                      // the Workers AI binding
   http?: { baseUrl: string; apiKey: string; accountId?: string }; // HTTP egress anchor (CF REST / Gemini-Developer / OpenRouter)
-  tokenCache?: TokenCache;                             // v0.2.0 (optional). OAuth cache for the Vertex Gemini transport.
-  vertex?: { saJson: string; projectId: string; location: string }; // v0.2.0 (optional). Vertex (service-account) channel for Gemini.
+  tokenCache?: TokenCache;                             // v0.2.0 (optional). OAuth cache for the GCP token source (Vertex Gemini + Agent Platform).
+  vertex?: { saJson: string; projectId: string; location: string }; // v0.2.0 (optional). GCP service-account channel (Gemini Vertex + v0.4.0 Agent Platform).
 }
 ```
 
@@ -382,7 +389,9 @@ The two v0.2.0 optional fields feed the Gemini adapter's dual-channel transport
 (§10): when **`vertex`** is present the transport is the Vertex channel
 (SA-JSON → JWT → OAuth Bearer, token-cached via **`tokenCache`**); otherwise it
 falls back to `http.apiKey` (Developer API). `http.apiKey` still covers the
-Developer-API + OpenRouter keys.
+Developer-API + OpenRouter keys. Since v0.4.0 the same two fields also configure
+the **Agent Platform** adapter (§11b) — the field name `vertex` is historical
+(frozen surface); it is simply the GCP service-account config.
 
 ### `ProviderFactory`
 
@@ -951,6 +960,94 @@ The pure IR → OpenAI-style chat-completions body mapper. Prepends `req.system`
 
 ---
 
+## 11b. Agent Platform adapter — `createAgentPlatformProvider` + `createGcpTokenSource`  *(v0.4.0)*
+
+`@bugbubug/llm-kit/adapters/agent-platform` (also on the `./adapters` barrel).
+Google renamed Vertex AI to **"Gemini Enterprise Agent Platform"** (2026; the
+API host is unchanged) — the adapter carries the NEW product name ("vertex"
+stays only on the historical `ctx.vertex` field and the Gemini transport).
+
+### `createAgentPlatformProvider`
+
+```ts
+function createAgentPlatformProvider(
+  ctx: ProviderContext,
+  opts?: {
+    fetchImpl?: typeof fetch;
+    now?: () => number;
+    tokenSource?: GcpTokenSource; // test/advanced seam: replaces the SA-minted source
+    baseUrl?: string;             // overrides the computed …/endpoints/openapi base
+  },
+): ChatModel; // NOT LlmProvider — no embed this release; the consumer wires it directly
+```
+
+Speaks the **OpenAI-compatible chat-completions** endpoint:
+
+```
+POST https://{host}/v1/projects/{projectId}/locations/{location}/endpoints/openapi/chat/completions
+```
+
+with the **host rule** `location === "global"` → bare `aiplatform.googleapis.com`,
+else the region-prefixed `{location}-aiplatform.googleapis.com`. Config comes
+from `ctx.vertex` (`{ saJson, projectId, location }`; partner models such as
+Grok live in `"global"`); auth is the SA-JSON → RS256 JWT → OAuth Bearer flow
+via `createGcpTokenSource` (cached through `ctx.tokenCache`, in-memory
+fallback). Missing `ctx.vertex` (and not BOTH `opts.baseUrl` + `opts.tokenSource`)
+→ `LlmKitError("provider_not_configured")` at construction.
+
+- **Model ids pass through VERBATIM** with their publisher prefix
+  (`"xai/grok-4.1-fast-non-reasoning"`, `"google/gemini-2.5-flash"`), from
+  `req.model` (fallback `ctx.chatModel`) — **no model names / publisher logic in
+  the SDK**.
+- **BOTH `ChatModel` methods are NATIVE** (the endpoint speaks both channels, so
+  neither is derived): **`streamChat`** is REAL SSE — a `stream:true` POST →
+  `parseSseFrames` → `choices[0].delta.content` tokens. Errors are **DATA**: a
+  connect-phase failure (token mint / fetch rejection / non-ok HTTP / missing
+  body) is ONE `{error}` chunk; a mid-stream `{"error":…}` data frame becomes an
+  `{error}` chunk and ends iteration; an early consumer break cancels the body
+  stream (rejection-swallowing, the v0.2.3 P0 pattern). **`generate`** is a
+  native `stream:false` single JSON POST — success-or-throw
+  (`upstream_error` on non-ok HTTP, `response_malformed` on a non-JSON body),
+  numeric-only `usage` flowing to `ChatResponse.usage`.
+- Translation: `req.system` → prepended `{role:"system"}` message; multimodal
+  parts map exactly like the v0.3.0 Cloudflare mapping (text-only turn → flat
+  string; any `{inlineData}` part → OpenAI content-part array with base64
+  `data:` URLs); `responseJson` → `response_format:{type:"json_object"}`;
+  **`req.thinking` is a NO-OP** (no portable reasoning knob in this dialect —
+  reasoning depth is the consumer's model-variant choice, e.g. a `-reasoning`
+  vs `-non-reasoning` id).
+
+```ts
+import { createAgentPlatformProvider } from "@bugbubug/llm-kit/adapters/agent-platform";
+
+const grok = createAgentPlatformProvider({
+  ...baseCtx,
+  chatModel: "xai/grok-4.1-fast-non-reasoning",
+  vertex: { saJson: env.GCP_SA_JSON, projectId: "my-project", location: "global" },
+  tokenCache: kvTokenCache, // optional; in-memory fallback otherwise
+});
+for await (const { token, error } of grok.streamChat(req)) { /* real SSE tokens */ }
+```
+
+### `createGcpTokenSource`
+
+```ts
+type GcpTokenSource = () => Promise<string>;
+function createGcpTokenSource(cfg: {
+  saJson: string; tokenCache: TokenCache; now?: () => number; fetchImpl?: typeof fetch;
+}): GcpTokenSource;
+```
+
+The reusable GCP service-account access-token source — **extracted
+behavior-preserving** from `VertexTransport.accessToken()`, now shared by the
+Vertex Gemini transport and the Agent Platform adapter. Frozen compat
+invariants: the cache key stays `vertex_token:${client_email}` (consumers may
+hold live tokens in KV under it), the TTL math stays
+`max(60, min(expiresIn − 60, 3300))` (~55 min for a 1 h token), and the
+construction-time `JSON.parse(saJson)` throw is unwrapped.
+
+---
+
 ## 12. `MemoryTokenCache`  *(v0.2.0)*
 
 ```ts
@@ -963,9 +1060,9 @@ class MemoryTokenCache implements TokenCache {
 `TokenCache` default (Map-backed, TTL honored + lazily evicted) for Node + unit
 tests; **production injects a KV-backed impl** as `ctx.tokenCache`. Uses no binding
 type and no `node:` import, so it lives in the adapters (exempt) zone. The Vertex
-Gemini transport also falls back to an equivalent inline in-memory cache when
-`ctx.vertex` is set but no `ctx.tokenCache` was injected, so the Vertex channel
-works in Node/tests with zero wiring.
+Gemini transport and the v0.4.0 Agent Platform adapter both fall back to it when
+`ctx.vertex` is set but no `ctx.tokenCache` was injected, so the GCP channels
+work in Node/tests with zero wiring.
 
 > **Business / SDK isolation (reaffirmed).** None of these adapters carry product
 > policy: there is no `(productId, tier)` orchestration, no routing table, no

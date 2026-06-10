@@ -1,7 +1,8 @@
 /**
  * @bugbubug/llm-kit — adapters EVERYTHING barrel (the "./adapters" subpath).
  *
- * Re-exports ALL the genuine egress adapters, for consumers who want the whole
+ * Re-exports ALL the genuine egress adapters (cloudflare, gemini, openrouter,
+ * agent-platform + the shared GCP token seam), for consumers who want the whole
  * set. The "./adapters/cloudflare" subpath maps to ./cloudflare.js directly so
  * a cloudflare-only consumer does NOT bundle the gemini/openrouter graph. This
  * is the ONLY part of the package exempt from the core-purity rule — anything
@@ -20,3 +21,16 @@ export { createGeminiProvider } from "./gemini.js";
 export { createGeminiImageProvider } from "./gemini-image.js";
 export { createOpenRouterProvider } from "./openrouter.js";
 export { MemoryTokenCache } from "./memory-token-cache.js";
+
+// ── GCP Agent Platform (OpenAI-compat chat-completions; native SSE streaming)
+//    + the reusable SA-JSON → OAuth token seam it shares with the Vertex Gemini
+//    transport (also surfaced on the "./adapters/agent-platform" subpath).
+export {
+  createAgentPlatformProvider,
+  type AgentPlatformProviderOptions,
+} from "./agent-platform.js";
+export {
+  createGcpTokenSource,
+  type GcpTokenSource,
+  type GcpTokenSourceConfig,
+} from "./gcp-token.js";
