@@ -3,9 +3,9 @@
 A **pure, hexagonal, framework-agnostic LLM egress kit**. It is a neutral,
 multimodal request IR + a set of capability ports
 (`ChatModel` / `Embedder` / `VisionModel` / `ImageModel`) + a family of egress
-adapters — **Cloudflare Workers AI**, **Gemini** (dual-channel Vertex / Developer
-API, text + vision + image-gen), **OpenRouter**, and a **deterministic,
-configurable mock**. That is the entire job.
+adapters — **Cloudflare Workers AI** (text + vision since v0.3.0), **Gemini**
+(dual-channel Vertex / Developer API, text + vision + image-gen),
+**OpenRouter**, and a **deterministic, configurable mock**. That is the entire job.
 
 It began as a faithful **extraction** of habibi's working LLM gateway internals
 (v0.1.0); v0.2.x lifts the proven non-streaming, multi-provider engine out of a
@@ -36,13 +36,15 @@ vision is *your* decision; the kit only exposes the generic capability.
 | **`ChatModel`** | `streamChat(req): AsyncIterable<StreamChunk>` | Yields normalized `{ token }` chunks. Recoverable upstream errors surface as a `{ error }` chunk — never thrown. |
 | | `generate(req): Promise<ChatResponse>` | Full response in one await. **Native non-streaming** in the Gemini / OpenRouter / Cloudflare-non-streaming adapters (one JSON call, no SSE); the aggregate of `streamChat` in the streaming Cloudflare adapter + mock. |
 | **`Embedder`** | `embed(req): Promise<number[][]>` | One vector per input string, index-aligned (bge-m3 1024-dim on Workers AI, with a dimension self-check). |
-| **`VisionModel`** | `analyze(req): Promise<VisionResponse>` | Image **understanding** (multimodal input). Implemented by whichever adapter supports it — the Gemini adapter does. |
+| **`VisionModel`** | `analyze(req): Promise<VisionResponse>` | Image **understanding** (multimodal input). Implemented by whichever adapter supports it — the Gemini adapter does, and both Cloudflare factories do since v0.3.0 (image parts go up as OpenAI-compat base64 `data:` URLs). |
 | **`ImageModel`** | `generate(req): Promise<ImageResult>` | Image **generation** → raw bytes + metadata, **no storage**. The Gemini image adapter implements it. |
 
 `LlmProvider = ChatModel & Embedder` (plus a `readonly name`). `VisionModel` /
 `ImageModel` are separate ports a consumer composes only where it needs them — an
 adapter implements exactly the capabilities its upstream offers (the Gemini text
-adapter is `ChatModel & VisionModel`; it does **not** fake an `embed`).
+adapter is `ChatModel & VisionModel`; it does **not** fake an `embed`. The
+Cloudflare factories return `LlmProvider & VisionModel` since v0.3.0 — still
+`ProviderFactory`-compatible).
 
 ## The IR (neutral, multimodal, parts-based)
 

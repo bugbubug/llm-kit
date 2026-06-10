@@ -145,6 +145,8 @@ src/
   adapters/
     cloudflare.ts        createCloudflareProvider + v0.2.0 createCloudflareNonStreamingProvider (native stream:false); re-exports cloudflareHooks;
                          hooks.retry honored via withRetry; gateway option omitted when ctx.gatewayId unset — IS the "./adapters/cloudflare" subpath
+                         + v0.3.0 BOTH factories implement VisionModel (analyze = sugar over generate); multimodal messages (image parts → OpenAI-compat data: URLs)
+    json.ts              v0.3.0 shared lenient safeJson (gemini + cloudflare analyze: unparseable prose → { raw })
     cloudflare-hooks.ts  cloudflareHooks (maxTokens default, GLM enable_thinking, chunk normalize)
     gemini.ts            v0.2.0 createGeminiProvider (ChatModel & VisionModel; non-streaming generate + single-chunk streamChat) (+ re-exports image factory)
     gemini-image.ts      v0.2.0 createGeminiImageProvider (ImageModel; raw bytes+meta, NO storage)

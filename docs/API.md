@@ -1,4 +1,4 @@
-# API reference — @bugbubug/llm-kit (v0.2.5)
+# API reference — @bugbubug/llm-kit (v0.3.0)
 
 The authoritative surface is the **API Extractor** report
 [`etc/llm-kit.api.md`](../etc/llm-kit.api.md), generated from `src/index.ts`'s
