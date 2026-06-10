@@ -157,6 +157,22 @@ its own contracts at the boundary.
 >    text/usage/delta/error-frame extractors). OpenRouter is deliberately NOT
 >    migrated onto it: its `[image]` placeholder downgrade is frozen v0.2.x
 >    behavior, `openrouter.ts` is byte-untouched.
+> 5. **MEASURED (2026-06-10, live call — `xai/grok-4.1-fast-non-reasoning`,
+>    `location:"global"`):** both channels work (streamChat delivered 23 real
+>    SSE chunks; generate returned text + usage). Operational gotchas:
+>    - The global Grok pool intermittently throws a TRANSIENT
+>      `429 RESOURCE_EXHAUSTED "The request is throttled due to too many
+>      concurrent requests"` even on the FIRST sequential request — this is
+>      shared-pool throttling, NOT quota=0 (a retry ~8 s later succeeded on the
+>      first attempt). The adapter takes NO hooks (same as Gemini/OpenRouter),
+>      so **retry is the CONSUMER's job**: catch
+>      `LlmKitError("upstream_error")` from `generate`, or re-call `streamChat`
+>      after an `{error}` chunk (re-iterating is safe — no tokens precede a
+>      connect-phase error chunk). Both error paths behaved exactly per rule 2
+>      in the live test.
+>    - xAI bills a fixed prompt overhead on Vertex: a ~10-token prompt was
+>      metered as `prompt_tokens: 676` — budget ~700 prompt tokens per request
+>      when estimating spend.
 
 Behavior is **preserved from habibi**, not redesigned (v0.3.0's Cloudflare
 vision is the first capability habibi never had — it follows the Gemini
