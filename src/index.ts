@@ -22,7 +22,7 @@
  *   • egress governance .. ./egress.js  (OPT-IN; consumer enforces)
  *   • embedding helper ... ./embedding.js
  *   • mock provider ...... ./mock.js
- *   • cloudflare adapter . ./adapters/index.js
+ *   • cloudflare adapter . ./adapters/cloudflare.js
  */
 
 // ── Neutral, multimodal parts-based request/response IR (types.ts) ───────────
@@ -101,5 +101,7 @@ export type { MockOptions } from "./mock.js";
 // ── By-NAME provider registry (registry.ts): pure, product-agnostic ──────────
 export { createProviderRegistry } from "./registry.js";
 
-// ── Cloudflare Workers AI (via AI Gateway) adapter (adapters/index.ts) ───────
-export { createCloudflareProvider, cloudflareHooks } from "./adapters/index.js";
+// ── Cloudflare Workers AI (via AI Gateway) adapter (adapters/cloudflare.ts) ──
+//    Re-exported from the cloudflare module directly (NOT the adapters barrel),
+//    so a core import never drags the gemini/openrouter adapter graph.
+export { createCloudflareProvider, cloudflareHooks } from "./adapters/cloudflare.js";

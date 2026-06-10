@@ -22,7 +22,7 @@
  *   • egress governance .. ./egress.js  (OPT-IN; consumer enforces)
  *   • embedding helper ... ./embedding.js
  *   • mock provider ...... ./mock.js
- *   • cloudflare adapter . ./adapters/index.js
+ *   • cloudflare adapter . ./adapters/cloudflare.js
  */
 export type { InlineData, Part, ChatRole, ChatMessage, Purpose, ChatRequest, StreamChunk, ChatResponse, EmbeddingRequest, ThinkingLevel, VisionRequest, VisionResponse, ImageRequest, ImageResult, FixtureResolver, } from "./types.js";
 export type { ChatModel, Embedder, LlmProvider, ProviderHooks, ProviderContext, ProviderFactory, AiBinding, AiGatewayOptions, VisionModel, ImageModel, TokenCache, ProviderRegistry, } from "./ports.js";
@@ -35,5 +35,5 @@ export { featureHashEmbed } from "./embedding.js";
 export { createMockProvider, createMockVisionModel, createMockImageModel, } from "./mock.js";
 export type { MockOptions } from "./mock.js";
 export { createProviderRegistry } from "./registry.js";
-export { createCloudflareProvider, cloudflareHooks } from "./adapters/index.js";
+export { createCloudflareProvider, cloudflareHooks } from "./adapters/cloudflare.js";
 //# sourceMappingURL=index.d.ts.map

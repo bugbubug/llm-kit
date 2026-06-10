@@ -1,1 +1,1 @@
-{"version":3,"file":"cloudflare.d.ts","sourceRoot":"","sources":["../../src/adapters/cloudflare.ts"],"names":[],"mappings":"AAgCA,OAAO,KAAK,EAIV,eAAe,EAEhB,MAAM,aAAa,CAAC;AAkErB,eAAO,MAAM,wBAAwB,EAAE,eA0FtC,CAAC;AA6CF;;;;;;GAMG;AACH,eAAO,MAAM,oCAAoC,EAAE,eA4DlD,CAAC"}
+{"version":3,"file":"cloudflare.d.ts","sourceRoot":"","sources":["../../src/adapters/cloudflare.ts"],"names":[],"mappings":"AAsCA,OAAO,KAAK,EAIV,eAAe,EAEhB,MAAM,aAAa,CAAC;AAQrB,OAAO,EAAE,eAAe,EAAE,MAAM,uBAAuB,CAAC;AA4ExD,eAAO,MAAM,wBAAwB,EAAE,eA8FtC,CAAC;AA6CF;;;;;;GAMG;AACH,eAAO,MAAM,oCAAoC,EAAE,eA+DlD,CAAC"}

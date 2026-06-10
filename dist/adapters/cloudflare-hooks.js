@@ -37,7 +37,9 @@ export const cloudflareHooks = {
         const token = f.response ?? f.choices?.[0]?.delta?.content;
         return token !== undefined && token !== "" ? token : undefined;
     },
-    // Streaming retry is NOT done in the adapter (a stream cannot be safely retried once it
-    // begins yielding); configure it via the AI Gateway header cf-aig-max-attempts if needed.
+    // No retry here: hooks.retry (consumer-provided) is honored by the adapter for the
+    // CONNECT/embed phase only — a stream cannot be safely retried once it begins
+    // yielding. Streaming retry can be configured via the AI Gateway header
+    // cf-aig-max-attempts if needed.
 };
 //# sourceMappingURL=cloudflare-hooks.js.map

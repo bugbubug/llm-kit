@@ -106,6 +106,48 @@ describe("featureHashEmbed — dims / determinism / normalization", () => {
   });
 });
 
+describe("featureHashEmbed — Unicode scripts (Arabic/Cyrillic/etc. are tokens, not separators)", () => {
+  test("Arabic input → NON-zero, L2-normalized vector (norm ≈ 1, never all-zero)", () => {
+    const v = featureHashEmbed("أحب المشي مع كلبي في الحديقة", DIMS);
+    expect(v.length).toBe(DIMS);
+    expect(v.some((x) => x !== 0)).toBe(true);
+    expect(l2(v)).toBeCloseTo(1, 6);
+  });
+
+  test("deterministic: same Arabic input → identical vector across calls", () => {
+    const s = "أفضل الردود الهادئة عندما أكون متعبا";
+    expect(featureHashEmbed(s, DIMS)).toEqual(featureHashEmbed(s, DIMS));
+  });
+
+  test("two Arabic strings sharing tokens are MORE similar than unrelated ones", () => {
+    const base = "أحب المشي مع كلبي في الحديقة كل صباح";
+    const overlap = "أحب المشي مع كلبي في الحديقة";
+    const unrelated = "نظرية الأوتار الفائقة والجاذبية الكمية";
+    const simOverlap = cosine(
+      featureHashEmbed(base, DIMS),
+      featureHashEmbed(overlap, DIMS),
+    );
+    const simUnrelated = cosine(
+      featureHashEmbed(base, DIMS),
+      featureHashEmbed(unrelated, DIMS),
+    );
+    expect(simOverlap).toBeGreaterThan(simUnrelated);
+    expect(simOverlap).toBeGreaterThan(0.5);
+  });
+
+  test("other previously-dropped scripts (Cyrillic, kana, Hangul) embed non-zero too", () => {
+    for (const s of ["привет мир", "こんにちは せかい", "안녕하세요 세계"]) {
+      expect(l2(featureHashEmbed(s, DIMS))).toBeCloseTo(1, 6);
+    }
+  });
+
+  test("Arabic punctuation/whitespace are separators (same tokens → same vector)", () => {
+    expect(featureHashEmbed("مرحبا، كيف حالك؟", DIMS)).toEqual(
+      featureHashEmbed("مرحبا كيف حالك", DIMS),
+    );
+  });
+});
+
 describe("mock streamChat — stream / echo / Arabic / determinism", () => {
   test("[inv20] createMockProvider(dims).name === 'mock'", () => {
     expect(createMockProvider(DIMS).name).toBe("mock");

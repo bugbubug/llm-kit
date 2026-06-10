@@ -1,4 +1,5 @@
 import type { ProviderFactory } from "../ports.js";
+export { cloudflareHooks } from "./cloudflare-hooks.js";
 export declare const createCloudflareProvider: ProviderFactory;
 /**
  * v0.2.0 — Cloudflare Workers AI provider whose generate() is a NATIVE

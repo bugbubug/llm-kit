@@ -31,11 +31,11 @@ export declare const InlineDataSchema: z.ZodObject<{
     /** base64-encoded bytes (no data: prefix). */
     data: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    mimeType: string;
     data: string;
+    mimeType: string;
 }, {
-    mimeType: string;
     data: string;
+    mimeType: string;
 }>;
 /** A text part: `{ text }`. */
 export declare const TextPartSchema: z.ZodObject<{
@@ -52,21 +52,21 @@ export declare const InlinePartSchema: z.ZodObject<{
         /** base64-encoded bytes (no data: prefix). */
         data: z.ZodString;
     }, "strip", z.ZodTypeAny, {
-        mimeType: string;
         data: string;
+        mimeType: string;
     }, {
-        mimeType: string;
         data: string;
+        mimeType: string;
     }>;
 }, "strip", z.ZodTypeAny, {
     inlineData: {
-        mimeType: string;
         data: string;
+        mimeType: string;
     };
 }, {
     inlineData: {
-        mimeType: string;
         data: string;
+        mimeType: string;
     };
 }>;
 /** A single content part — text or inline binary. Mirrors `Part`. */
@@ -82,21 +82,21 @@ export declare const PartSchema: z.ZodUnion<[z.ZodObject<{
         /** base64-encoded bytes (no data: prefix). */
         data: z.ZodString;
     }, "strip", z.ZodTypeAny, {
-        mimeType: string;
         data: string;
+        mimeType: string;
     }, {
-        mimeType: string;
         data: string;
+        mimeType: string;
     }>;
 }, "strip", z.ZodTypeAny, {
     inlineData: {
-        mimeType: string;
         data: string;
+        mimeType: string;
     };
 }, {
     inlineData: {
-        mimeType: string;
         data: string;
+        mimeType: string;
     };
 }>]>;
 /** Chat roles. `system` is NOT a role — it is a separate ChatRequest field. Mirrors `ChatRole`. */
@@ -120,21 +120,21 @@ export declare const ChatMessageSchema: z.ZodObject<{
             /** base64-encoded bytes (no data: prefix). */
             data: z.ZodString;
         }, "strip", z.ZodTypeAny, {
-            mimeType: string;
             data: string;
+            mimeType: string;
         }, {
-            mimeType: string;
             data: string;
+            mimeType: string;
         }>;
     }, "strip", z.ZodTypeAny, {
         inlineData: {
-            mimeType: string;
             data: string;
+            mimeType: string;
         };
     }, {
         inlineData: {
-            mimeType: string;
             data: string;
+            mimeType: string;
         };
     }>]>, "many">;
 }, "strip", z.ZodTypeAny, {
@@ -143,8 +143,8 @@ export declare const ChatMessageSchema: z.ZodObject<{
         text: string;
     } | {
         inlineData: {
-            mimeType: string;
             data: string;
+            mimeType: string;
         };
     })[];
 }, {
@@ -153,8 +153,8 @@ export declare const ChatMessageSchema: z.ZodObject<{
         text: string;
     } | {
         inlineData: {
-            mimeType: string;
             data: string;
+            mimeType: string;
         };
     })[];
 }>;
@@ -179,21 +179,21 @@ export declare const ChatRequestSchema: z.ZodObject<{
                 /** base64-encoded bytes (no data: prefix). */
                 data: z.ZodString;
             }, "strip", z.ZodTypeAny, {
-                mimeType: string;
                 data: string;
+                mimeType: string;
             }, {
-                mimeType: string;
                 data: string;
+                mimeType: string;
             }>;
         }, "strip", z.ZodTypeAny, {
             inlineData: {
-                mimeType: string;
                 data: string;
+                mimeType: string;
             };
         }, {
             inlineData: {
-                mimeType: string;
                 data: string;
+                mimeType: string;
             };
         }>]>, "many">;
     }, "strip", z.ZodTypeAny, {
@@ -202,8 +202,8 @@ export declare const ChatRequestSchema: z.ZodObject<{
             text: string;
         } | {
             inlineData: {
-                mimeType: string;
                 data: string;
+                mimeType: string;
             };
         })[];
     }, {
@@ -212,8 +212,8 @@ export declare const ChatRequestSchema: z.ZodObject<{
             text: string;
         } | {
             inlineData: {
-                mimeType: string;
                 data: string;
+                mimeType: string;
             };
         })[];
     }>, "many">;
@@ -231,8 +231,8 @@ export declare const ChatRequestSchema: z.ZodObject<{
             text: string;
         } | {
             inlineData: {
-                mimeType: string;
                 data: string;
+                mimeType: string;
             };
         })[];
     }[];
@@ -252,8 +252,8 @@ export declare const ChatRequestSchema: z.ZodObject<{
             text: string;
         } | {
             inlineData: {
-                mimeType: string;
                 data: string;
+                mimeType: string;
             };
         })[];
     }[];
@@ -317,11 +317,11 @@ export declare const VisionRequestSchema: z.ZodObject<{
         /** base64-encoded bytes (no data: prefix). */
         data: z.ZodString;
     }, "strip", z.ZodTypeAny, {
-        mimeType: string;
         data: string;
+        mimeType: string;
     }, {
-        mimeType: string;
         data: string;
+        mimeType: string;
     }>;
     prompt: z.ZodString;
     responseJson: z.ZodOptional<z.ZodBoolean>;
@@ -330,8 +330,8 @@ export declare const VisionRequestSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     model: string;
     image: {
-        mimeType: string;
         data: string;
+        mimeType: string;
     };
     prompt: string;
     thinking?: "minimal" | "low" | "medium" | "high" | undefined;
@@ -340,8 +340,8 @@ export declare const VisionRequestSchema: z.ZodObject<{
 }, {
     model: string;
     image: {
-        mimeType: string;
         data: string;
+        mimeType: string;
     };
     prompt: string;
     thinking?: "minimal" | "low" | "medium" | "high" | undefined;
@@ -368,11 +368,11 @@ export declare const ImageRequestSchema: z.ZodObject<{
         /** base64-encoded bytes (no data: prefix). */
         data: z.ZodString;
     }, "strip", z.ZodTypeAny, {
-        mimeType: string;
         data: string;
+        mimeType: string;
     }, {
-        mimeType: string;
         data: string;
+        mimeType: string;
     }>, "many">>;
     aspectRatio: z.ZodOptional<z.ZodString>;
     imageSize: z.ZodOptional<z.ZodString>;
@@ -382,8 +382,8 @@ export declare const ImageRequestSchema: z.ZodObject<{
     prompt: string;
     mockRef?: string | undefined;
     refImages?: {
-        mimeType: string;
         data: string;
+        mimeType: string;
     }[] | undefined;
     aspectRatio?: string | undefined;
     imageSize?: string | undefined;
@@ -392,8 +392,8 @@ export declare const ImageRequestSchema: z.ZodObject<{
     prompt: string;
     mockRef?: string | undefined;
     refImages?: {
-        mimeType: string;
         data: string;
+        mimeType: string;
     }[] | undefined;
     aspectRatio?: string | undefined;
     imageSize?: string | undefined;
@@ -406,14 +406,14 @@ export declare const ImageResultSchema: z.ZodObject<{
     height: z.ZodOptional<z.ZodNumber>;
     usage: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodNumber>>;
 }, "strip", z.ZodTypeAny, {
-    mimeType: string;
     data: string;
+    mimeType: string;
     usage?: Record<string, number> | undefined;
     width?: number | undefined;
     height?: number | undefined;
 }, {
-    mimeType: string;
     data: string;
+    mimeType: string;
     usage?: Record<string, number> | undefined;
     width?: number | undefined;
     height?: number | undefined;

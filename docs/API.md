@@ -1,4 +1,4 @@
-# API reference — @bugbubug/llm-kit (v0.2.1)
+# API reference — @bugbubug/llm-kit (v0.2.5-dev)
 
 The authoritative surface is the **API Extractor** report
 [`etc/llm-kit.api.md`](../etc/llm-kit.api.md), generated from `src/index.ts`'s
@@ -8,7 +8,13 @@ export with its semantics + a short usage snippet. The contract is
 v0.1.0 — every change is a new optional field or a new type/value/subpath export,
 so a consumer pinned to v0.1.0 (habibi) is unaffected. v0.2.1 keeps the v0.2.0
 **surface identical**; it is a behavior-only change (the mock's `generate()`
-returns resolver fixtures verbatim + a `usage:{mock:1}` marker).
+returns resolver fixtures verbatim + a `usage:{mock:1}` marker). v0.2.5-dev
+(unreleased) keeps the frozen root surface identical again — it is a
+behavior/packaging pass: Unicode tokenization in `featureHashEmbed`,
+`hooks.retry` actually honored by the Cloudflare factories, the AI Gateway
+option omitted when `ctx.gatewayId` is unset, a spec-correct line-based SSE
+parser, and the `./adapters/cloudflare` subpath narrowed to the cloudflare-only
+module (the everything-barrel moved to the new `./adapters` subpath).
 
 Root imports:
 
@@ -19,13 +25,16 @@ import { /* ... */ } from "@bugbubug/llm-kit";
 Subpaths:
 
 ```ts
+// Cloudflare ONLY — does NOT pull the gemini/openrouter adapter graph:
 import {
-  createCloudflareProvider, createCloudflareNonStreamingProvider,
-  cloudflareHooks, MemoryTokenCache,
-  // ./adapters/cloudflare also RE-EXPORTS the gemini/openrouter factories below
-  createGeminiProvider, createGeminiImageProvider,
-  createOpenRouterProvider,
+  createCloudflareProvider, createCloudflareNonStreamingProvider, cloudflareHooks,
 } from "@bugbubug/llm-kit/adapters/cloudflare";
+// The EVERYTHING barrel (all adapters + MemoryTokenCache) for consumers who want it:
+import {
+  createCloudflareProvider, createCloudflareNonStreamingProvider, cloudflareHooks,
+  createGeminiProvider, createGeminiImageProvider, createOpenRouterProvider,
+  MemoryTokenCache,
+} from "@bugbubug/llm-kit/adapters";
 import { createGeminiProvider, createGeminiImageProvider } from "@bugbubug/llm-kit/adapters/gemini";
 import { createOpenRouterProvider, toOpenRouterBody } from "@bugbubug/llm-kit/adapters/openrouter";
 import { createMockProvider, createMockVisionModel, createMockImageModel } from "@bugbubug/llm-kit/mock";
@@ -41,10 +50,14 @@ ports + the stream/egress/embed helpers + the mock factories
 (`createCloudflareNonStreamingProvider`, the Gemini text+vision / image-gen
 factories, the OpenRouter factory, `MemoryTokenCache`) and the
 `toProviderJsonSchema` helper are deliberately kept **OFF** the core barrel — they
-live only on the `./adapters/*` and `./zod` subpaths, so the core import-graph
-stays adapter-free and zod-free. `@bugbubug/llm-kit/adapters/cloudflare` is the
-one adapters barrel and re-exports the gemini/openrouter factories too, so a
-consumer can pull every real adapter from a single subpath.
+live only on the `./adapters`/`./adapters/*` and `./zod` subpaths, so the core
+import-graph stays adapter-free and zod-free. Since v0.2.5-dev,
+`@bugbubug/llm-kit/adapters/cloudflare` maps to the cloudflare module ONLY
+(`createCloudflareProvider` / `createCloudflareNonStreamingProvider` /
+`cloudflareHooks`) so a cloudflare-only Worker never bundles the
+gemini/openrouter graph; the single-import-everything barrel is the **new
+`@bugbubug/llm-kit/adapters` subpath**. The package also declares
+`"sideEffects": false` so bundlers can tree-shake unused exports.
 
 ---
 
@@ -419,7 +432,11 @@ no-retry.
 - **`normalizeChunk`** — map one raw (JSON-parsed) SSE frame → token text;
   `undefined` = skip this frame.
 - **`retry`** — a retry wrapper for the embed / pre-stream connection phase only
-  (a stream cannot be safely retried once it begins). Absent = run once.
+  (a stream cannot be safely retried once it begins). Absent = run once. Honored
+  (v0.2.5-dev) by **both Cloudflare factories** — the streaming factory's
+  connect-phase `ai.run`, the non-streaming factory's `generate` run, and both
+  `embed`s. The Gemini/OpenRouter factories take no hooks, so `retry` does not
+  apply to them.
 
 ---
 
@@ -461,15 +478,24 @@ as `StreamChunk.error`. Same philosophy as auth-kit's `AuthKitError`.
 function parseSseFrames(stream: ReadableStream<Uint8Array>): AsyncIterable<unknown>;
 ```
 
-Reads a Workers AI SSE `ReadableStream`, splits the byte stream on `\n\n`, strips
-the `data:` prefix, and JSON-parses each frame, yielding the parsed payload.
+Reads an SSE `ReadableStream` with a spec-correct (WHATWG) **line-based** parser
+(v0.2.5-dev; same signature and frozen semantics as the original `\n\n` splitter)
+and yields the JSON-parsed `data` payload of each dispatched frame.
 
+- **Line terminators**: `\r\n`, `\n`, and lone `\r` are all accepted — a CRLF
+  upstream (common for OpenAI-compatible endpoints) parses correctly. A `\r\n`
+  split across two reads cannot fabricate a phantom blank line.
+- A **blank line dispatches** the accumulated frame. Multiple `data:` lines in
+  one frame are joined with `\n` before parsing; one optional leading space
+  after the colon is stripped per the spec.
+- Comment lines (starting `:`) and non-`data` fields (`event:`, `id:`,
+  `retry:`) are **ignored** — an `event:`-prefixed frame's data is still parsed.
 - The `[DONE]` payload is a **terminating sentinel** — iteration stops; it is never
   yielded.
-- A **trailing frame** not terminated by `\n\n` is **flushed**: if the upstream
-  omits the final `\n\n`, the residual buffer is still a complete frame and is
-  yielded — the last token is never dropped. A residual `[DONE]` yields nothing.
-- Non-`data:` lines, empty frames, and non-JSON heartbeats are skipped.
+- A **trailing frame** without a final terminator is **flushed**: the residual
+  buffer is still a complete frame and is yielded — the last token is never
+  dropped. A residual `[DONE]` yields nothing.
+- Frames with no `data` field and non-JSON payloads (heartbeats) are skipped.
 - The reader lock is released in a `finally`, however iteration ends.
 
 ```ts
@@ -514,7 +540,9 @@ function withRetry<T>(fn: () => Promise<T>, hooks: ProviderHooks): Promise<T>;
 Runs `fn` exactly once when `hooks.retry` is absent. When given, attempts up to
 `maxAttempts`, rethrows immediately on the last attempt or when `isRetryable(e)`
 is false, and sleeps `backoffMs(attempt)` between retryable attempts. For the
-embed / pre-stream connection phase only.
+embed / pre-stream connection phase only. Since v0.2.5-dev the Cloudflare
+factories call this around every `ai.run` (stream connect / non-streaming
+generate / embed), so a consumer-supplied `hooks.retry` is actually honored.
 
 ### `aggregateStream`
 
@@ -587,8 +615,11 @@ A deterministic feature-hashed embedding (used by the mock; exported for reuse).
 - The vector length is **strictly** `dims` (sourced from config, never hardcoded).
 - Deterministic: same input → identical vector, stable across calls / processes
   (FNV-1a 32-bit hash via `Math.imul`).
-- Tokenizes by lowercasing then splitting on `/[^a-z0-9一-鿿]+/u` (CJK kept;
-  underscores and other non-alnum are separators), dropping empty tokens.
+- Tokenizes by lowercasing then splitting on `/[^\p{L}\p{N}]+/u` (Unicode
+  property escapes — Latin, CJK, **Arabic**, Cyrillic, kana, Hangul, … all
+  tokenize; v0.2.5-dev, previously `/[^a-z0-9一-鿿]+/u` which embedded Arabic
+  text to the all-zero vector), dropping empty tokens. Underscores, punctuation
+  and whitespace are separators.
 - Accumulates each token at slot `hash % dims` with a sign from the hash's high
   bit, then L2-normalizes — a non-empty vector has norm ≈ 1; overlapping texts have
   higher cosine similarity than unrelated ones.
@@ -711,7 +742,8 @@ The genuine egress adapter over the Workers AI binding (via AI Gateway).
 - Throws `LlmKitError("missing_binding")` at construction when `ctx.ai` is
   undefined (a config fault, never a stream error).
 - **`streamChat`** — applies `hooks.rewriteChat` (falling back to `req`), then
-  calls `ai.run(model, input, { gateway })` where:
+  calls `ai.run(model, input, options?)` (the connect wrapped in `withRetry`;
+  `hooks.retry` absent = run once) where:
   - `model = rewritten.model || ctx.chatModel`
   - `input = { messages, stream:true, max_tokens: r.maxTokens, temperature:
     r.temperature, ...(r.responseJson ? { response_format: { type: "json_object" } } : {}),
@@ -719,16 +751,20 @@ The genuine egress adapter over the Workers AI binding (via AI Gateway).
     v0.2.0-additive — present **only** when `r.responseJson === true` (absent on all
     v0.1.0 callers → `{}` → no-op); extra input is shallow-merged; absent → no extra
     keys.
-  - `gateway = { id: ctx.gatewayId ?? "", collectLogPayload: false }` (the
-    anonymity default; consumer-overridable)
+  - `options = { gateway: { id: ctx.gatewayId, collectLogPayload: false } }`
+    when `ctx.gatewayId` is set (the anonymity default; consumer-overridable);
+    when it is **unset the third arg is OMITTED entirely** (v0.2.5-dev —
+    previously an empty `{ id: "" }` was sent, which can make Workers AI reject
+    the call).
   Then pipes the returned `ReadableStream` through `parseSseFrames` →
   `normalizeStream(rawFrames, hooks)` and returns the normalized iterable.
 - **Parts → flat Workers AI messages**: `req.system` (if present) is prepended as a
   `{ role:"system" }` message; each `ChatMessage`'s parts join to a string where a
   `{text}` part contributes its text and an `{inlineData}` part contributes the
   literal marker `[image]`; `user`/`assistant` roles pass through.
-- **`embed`** — `ai.run(model || ctx.embedModel, { text: input }, { gateway })`
-  (Workers AI's embedding input key is `text`, not OpenAI's `input`). Then:
+- **`embed`** — `ai.run(model || ctx.embedModel, { text: input }, options?)`
+  (same conditional gateway options; the whole call wrapped in `withRetry`;
+  Workers AI's embedding input key is `text`, not OpenAI's `input`). Then:
   - **count self-check** — throws `count_mismatch` if `resp.data.length !==
     input.length` (before any index alignment).
   - **per-vector dim self-check** — throws `dim_mismatch` (naming the offending
@@ -769,7 +805,10 @@ extracts the text (`{ response }`, or a stringified non-string `response`, or
 OpenAI-compatible `choices[0].message.content`) and a numeric `usage` map (when the
 model reported one). Its `streamChat` yields that whole text as **one chunk**.
 `embed` reuses the **same** count + per-vector-dim self-checks as the streaming
-provider; missing `ctx.ai` → `LlmKitError("missing_binding")`. **The existing
+provider; missing `ctx.ai` → `LlmKitError("missing_binding")`. The `generate`
+and `embed` runs are wrapped in `withRetry` and use the same conditional
+gateway options (omitted when `ctx.gatewayId` is unset) as the streaming
+factory (v0.2.5-dev). **The existing
 `createCloudflareProvider` is UNCHANGED** — its `generate` still aggregates the SSE
 stream. Off the core barrel; surfaced on `@bugbubug/llm-kit/adapters/cloudflare`.
 

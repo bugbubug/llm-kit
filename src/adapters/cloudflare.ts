@@ -7,9 +7,13 @@
  *  - streamChat: apply `hooks.rewriteChat` → build Workers AI input
  *    `{ messages, stream:true, max_tokens, temperature, ...extraChatInput }` →
  *    `ai.run(model, input, { gateway })` → parseSseFrames → normalizeStream.
- *  - embed: `ai.run(model, { text: input }, { gateway })` → `resp.data`, with a
- *    COUNT self-check (=== input.length) and a PER-VECTOR dim self-check (every
- *    vector length === ctx.embeddingDims), throwing LlmKitError on mismatch.
+ *    The CONNECT-phase `ai.run` is wrapped in `withRetry` (active only when
+ *    `hooks.retry` is given); once the stream has begun yielding there is no
+ *    retry — the run call IS the connect.
+ *  - embed: `ai.run(model, { text: input }, { gateway })` (whole call wrapped in
+ *    `withRetry`) → `resp.data`, with a COUNT self-check (=== input.length) and
+ *    a PER-VECTOR dim self-check (every vector length === ctx.embeddingDims),
+ *    throwing LlmKitError on mismatch.
  *  - generate: aggregate streamChat into one ChatResponse (the generate seam).
  *
  * The neutral parts IR is flattened to Workers AI's OpenAI-style messages
@@ -21,6 +25,8 @@
  *
  * `@cf/` models need no key; the `{ gateway:{ id } }` third arg pins inference to
  * AI Gateway (logging/caching/rate-limit/retry/cost) — the single egress out.
+ * When `ctx.gatewayId` is unset, NO third arg is passed (an empty gateway id is
+ * not the same as omitting the option and can make Workers AI reject the call).
  * `collectLogPayload:false` is the anonymity default (consumer-overridable
  * policy, NOT enforced by the SDK).
  *
@@ -39,7 +45,25 @@ import type {
 } from "../ports.js";
 import { LlmKitError } from "../errors.js";
 import { parseSseFrames } from "../sse.js";
-import { aggregateStream, normalizeStream } from "../stream.js";
+import { aggregateStream, normalizeStream, withRetry } from "../stream.js";
+
+// The full documented cloudflare surface lives on THIS module (the
+// "./adapters/cloudflare" subpath maps here, so a cloudflare-only consumer
+// never pulls the gemini/openrouter adapter graph via the adapters barrel).
+export { cloudflareHooks } from "./cloudflare-hooks.js";
+
+/**
+ * Build the `ai.run` third argument. With a configured gatewayId → the gateway
+ * options (collectLogPayload:false anonymity default). Without one → undefined
+ * (the option is OMITTED — an empty `{ id: "" }` is not equivalent and can make
+ * Workers AI reject the call).
+ */
+function gatewayRunOptions(
+  ctx: ProviderContext,
+): { gateway: AiGatewayOptions } | undefined {
+  if (!ctx.gatewayId) return undefined;
+  return { gateway: { id: ctx.gatewayId, collectLogPayload: false } };
+}
 
 /** Validate embed response structure and dimensions before returning. */
 function validateEmbedResponse(
@@ -120,11 +144,9 @@ export const createCloudflareProvider: ProviderFactory = (
   // Anonymity default (consumer-overridable policy): do not let AI Gateway persist
   // request/response payloads — keep only token/cost/model metadata. The egress
   // invariant (a gatewayId or whitelisted baseUrl) is NOT enforced here; the
-  // consumer opts in via assertGatewayEgress.
-  const gateway: AiGatewayOptions = {
-    id: ctx.gatewayId ?? "",
-    collectLogPayload: false,
-  };
+  // consumer opts in via assertGatewayEgress. When ctx.gatewayId is unset the
+  // gateway option is OMITTED entirely (undefined third arg).
+  const runOptions = gatewayRunOptions(ctx);
 
   // Bound as a local so `generate` can call it without relying on `this`
   // (the provider may be destructured by a consumer). An async generator so the
@@ -136,17 +158,24 @@ export const createCloudflareProvider: ProviderFactory = (
     const r = hooks.rewriteChat?.(req, ctx) ?? req; // channel quirks: max_tokens default, etc.
     let stream: ReadableStream<Uint8Array>;
     try {
-      stream = (await ai.run(
-        r.model || ctx.chatModel,
-        {
-          messages: toWorkersAiMessages(r),
-          stream: true,
-          max_tokens: r.maxTokens,
-          temperature: r.temperature,
-          ...(r.responseJson ? { response_format: { type: "json_object" } } : {}),
-          ...(hooks.extraChatInput?.(r, ctx) ?? {}),
-        },
-        { gateway },
+      // Only the CONNECT is retried (hooks.retry; absent = run once) — once the
+      // stream has begun yielding there is no retry. Retry exhaustion lands in
+      // the same catch below and becomes an {error} chunk.
+      stream = (await withRetry(
+        () =>
+          ai.run(
+            r.model || ctx.chatModel,
+            {
+              messages: toWorkersAiMessages(r),
+              stream: true,
+              max_tokens: r.maxTokens,
+              temperature: r.temperature,
+              ...(r.responseJson ? { response_format: { type: "json_object" } } : {}),
+              ...(hooks.extraChatInput?.(r, ctx) ?? {}),
+            },
+            runOptions,
+          ),
+        hooks,
       )) as ReadableStream<Uint8Array>;
     } catch (e) {
       // CONNECT-phase failure is recoverable DATA on the streaming path: yield it
@@ -182,10 +211,9 @@ export const createCloudflareProvider: ProviderFactory = (
 
     async embed(req: EmbeddingRequest): Promise<number[][]> {
       const r = hooks.rewriteEmbed?.(req, ctx) ?? req;
-      const resp = await ai.run(
-        r.model || ctx.embedModel,
-        { text: r.input },
-        { gateway },
+      const resp = await withRetry(
+        () => ai.run(r.model || ctx.embedModel, { text: r.input }, runOptions),
+        hooks,
       );
       return validateEmbedResponse(resp, r.input.length, ctx.embeddingDims);
     },
@@ -260,24 +288,27 @@ export const createCloudflareNonStreamingProvider: ProviderFactory = (
   // below (arrow consts) keep the non-undefined narrowing.
   const aiBinding = ai;
 
-  const gateway: AiGatewayOptions = {
-    id: ctx.gatewayId ?? "",
-    collectLogPayload: false,
-  };
+  // Gateway option omitted (undefined third arg) when ctx.gatewayId is unset.
+  const runOptions = gatewayRunOptions(ctx);
 
   const generate = async (req: ChatRequest): Promise<ChatResponse> => {
     const r = hooks.rewriteChat?.(req, ctx) ?? req;
-    const out = await aiBinding.run(
-      r.model || ctx.chatModel,
-      {
-        messages: toWorkersAiMessages(r),
-        stream: false,
-        max_tokens: r.maxTokens,
-        temperature: r.temperature,
-        ...(r.responseJson ? { response_format: { type: "json_object" } } : {}),
-        ...(hooks.extraChatInput?.(r, ctx) ?? {}),
-      },
-      { gateway },
+    // Whole single-JSON run wrapped in withRetry (hooks.retry; absent = run once).
+    const out = await withRetry(
+      () =>
+        aiBinding.run(
+          r.model || ctx.chatModel,
+          {
+            messages: toWorkersAiMessages(r),
+            stream: false,
+            max_tokens: r.maxTokens,
+            temperature: r.temperature,
+            ...(r.responseJson ? { response_format: { type: "json_object" } } : {}),
+            ...(hooks.extraChatInput?.(r, ctx) ?? {}),
+          },
+          runOptions,
+        ),
+      hooks,
     );
     const usage = extractWorkersAiUsage(out);
     return { text: extractWorkersAiText(out), ...(usage ? { usage } : {}) };
@@ -296,10 +327,10 @@ export const createCloudflareNonStreamingProvider: ProviderFactory = (
     generate,
     async embed(req: EmbeddingRequest): Promise<number[][]> {
       const r = hooks.rewriteEmbed?.(req, ctx) ?? req;
-      const resp = await aiBinding.run(
-        r.model || ctx.embedModel,
-        { text: r.input },
-        { gateway },
+      const resp = await withRetry(
+        () =>
+          aiBinding.run(r.model || ctx.embedModel, { text: r.input }, runOptions),
+        hooks,
       );
       return validateEmbedResponse(resp, r.input.length, ctx.embeddingDims);
     },

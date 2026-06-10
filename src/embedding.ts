@@ -11,9 +11,10 @@
  *  - A non-empty string is L2-normalized (norm ≈ 1); an empty / fully-stripped
  *    string returns the all-zero vector (norm exactly 0).
  *
- * Method: lowercase tokenize → each token hashed (FNV-1a 32-bit) to a slot in
- * [0,dims) and accumulated with a sign bit → L2-normalize. No external library /
- * network / DB.
+ * Method: lowercase tokenize (split on non-letter/non-number via Unicode
+ * property escapes, so Arabic/Cyrillic/CJK/kana/etc. all tokenize) → each token
+ * hashed (FNV-1a 32-bit) to a slot in [0,dims) and accumulated with a sign bit →
+ * L2-normalize. No external library / network / DB.
  *
  * PURITY: pure TypeScript — NO runtime imports, NO @cloudflare/workers-types, NO
  * node:*, NO zod. Runs unchanged on Node, workerd, and vitest.
@@ -31,11 +32,15 @@ function stableHash(token: string): number {
   return h >>> 0; // coerce to unsigned 32-bit
 }
 
-/** Lowercase tokenize: split on non-(alnum/CJK); drop empty tokens. Underscores etc. are separators. */
+/**
+ * Lowercase tokenize: split on non-(letter/number) via Unicode property escapes
+ * (\p{L}/\p{N}: keeps Latin, CJK, Arabic, Cyrillic, kana, Hangul, …); drop empty
+ * tokens. Underscores/punctuation/whitespace are separators.
+ */
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
-    .split(/[^a-z0-9一-鿿]+/u)
+    .split(/[^\p{L}\p{N}]+/u)
     .filter((t) => t.length > 0);
 }
 

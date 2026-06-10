@@ -65,6 +65,40 @@ its own contracts at the boundary.
 > `streamChat`'s `stream.cancel()` is now rejection-safe (`void …catch(()=>{})`),
 > so a rejecting cancel on an errored/aborted stream can't escape as an unhandled
 > rejection that terminates a workerd request.
+>
+> **v0.2.5-dev (UNRELEASED — committed after v0.2.4, not yet tagged; frozen root
+> surface unchanged, behavior/packaging only):**
+> 1. `featureHashEmbed` tokenizes via Unicode property escapes
+>    (`/[^\p{L}\p{N}]+/u`) — Arabic/Cyrillic/kana/Hangul now produce real tokens
+>    instead of the all-zero vector (the old `/[^a-z0-9一-鿿]+/u` silently broke
+>    dev/CI memory similarity for Arabic). Vectors for previously-dropped scripts
+>    change value; Latin/CJK-only inputs are unaffected.
+> 2. `hooks.retry` is now HONORED: both Cloudflare factories wrap their `ai.run`
+>    calls (stream connect / non-streaming generate / both embeds) in
+>    `withRetry`. Absent retry config = run once (no behavior change); retry
+>    exhaustion on the streaming connect still lands as an `{error}` chunk.
+>    Gemini/OpenRouter take no hooks — retry does not apply there.
+> 3. The AI Gateway option is OMITTED (no `ai.run` third arg) when
+>    `ctx.gatewayId` is unset — previously `{ gateway: { id: "" } }` was sent,
+>    which can make Workers AI reject the call.
+> 4. Packaging: `./adapters/cloudflare` now maps to the cloudflare-only module
+>    (`createCloudflareProvider` / `createCloudflareNonStreamingProvider` /
+>    `cloudflareHooks` — `cloudflare.ts` re-exports the hooks); the
+>    everything-barrel moved to the NEW `./adapters` subpath (gemini + openrouter
+>    + MemoryTokenCache included). The root barrel re-exports cloudflare from
+>    `./adapters/cloudflare.js` directly, so a core import no longer drags the
+>    gemini/openrouter graph. `"sideEffects": false` added for tree-shaking.
+>    (A consumer that imported gemini/openrouter names from the
+>    `./adapters/cloudflare` subpath — never the documented path — must switch
+>    to `./adapters` or the per-provider subpaths when it bumps its tag.)
+> 5. `parseSseFrames` rewritten as a spec-correct (WHATWG) LINE-BASED SSE parser
+>    (same signature + frozen semantics: JSON payloads, `[DONE]` sentinel,
+>    trailing-frame flush). New: `\r\n`/`\r` line terminators (a CRLF upstream
+>    used to lose the WHOLE reply via a failed end-of-stream parse), multi-line
+>    `data:` joined with `\n`, `event:`/`id:`/`retry:`/comment lines ignored,
+>    cross-chunk `\r\n` splits handled. One deliberate leniency drop: `[DONE]`
+>    must now match exactly after the spec's one-leading-space strip (the old
+>    whole-frame `.trim()` is gone).
 
 Behavior is **preserved from habibi**, not redesigned. The source files name the
 habibi originals they extract.
@@ -79,15 +113,16 @@ src/
   ports.ts          ChatModel, Embedder, LlmProvider, ProviderHooks, ProviderContext, ProviderFactory, AiBinding, AiGatewayOptions
                     + v0.2.0: VisionModel, ImageModel, TokenCache, ProviderRegistry (+ ProviderContext.tokenCache?/vertex?)
   errors.ts         LlmKitError + LlmKitErrorCode union (fault codes only; incl. unknown_provider/provider_not_configured + v0.2.2 upstream_error/response_malformed)
-  sse.ts            parseSseFrames (SSE frame parser + [DONE] sentinel + trailing-frame flush)
+  sse.ts            parseSseFrames (spec-correct line-based SSE parser: CRLF/CR/LF, multi-line data, event/comment lines ignored, [DONE] sentinel, trailing-frame flush)
   stream.ts         defaultHooks, normalizeStream, withRetry, aggregateStream (the generate seam)
   egress.ts         assertGatewayEgress, isAllowedGatewayUrl, DEFAULT_CF_GATEWAY_PREFIXES (OPT-IN)
-  embedding.ts      featureHashEmbed (deterministic FNV-1a feature hash)
+  embedding.ts      featureHashEmbed (deterministic FNV-1a feature hash; Unicode \p{L}\p{N} tokenize — Arabic/Cyrillic/etc. tokenize)
   mock.ts           createMockProvider (union number|MockOptions, injectable FixtureResolver; v0.2.1 generate() returns fixtures VERBATIM+usage) + createMockVisionModel/createMockImageModel
   registry.ts       v0.2.0 createProviderRegistry — pure by-NAME register/create (NO productId/tier/route/fallback)
   zod.ts            OPTIONAL non-frozen "@bugbubug/llm-kit/zod" subpath (the ONLY file importing zod; v0.2.0 adds the reserved zod/v4 toProviderJsonSchema)
   adapters/
-    cloudflare.ts        createCloudflareProvider (UNCHANGED) + v0.2.0 createCloudflareNonStreamingProvider (native stream:false)
+    cloudflare.ts        createCloudflareProvider + v0.2.0 createCloudflareNonStreamingProvider (native stream:false); re-exports cloudflareHooks;
+                         hooks.retry honored via withRetry; gateway option omitted when ctx.gatewayId unset — IS the "./adapters/cloudflare" subpath
     cloudflare-hooks.ts  cloudflareHooks (maxTokens default, GLM enable_thinking, chunk normalize)
     gemini.ts            v0.2.0 createGeminiProvider (ChatModel & VisionModel; non-streaming generate + single-chunk streamChat) (+ re-exports image factory)
     gemini-image.ts      v0.2.0 createGeminiImageProvider (ImageModel; raw bytes+meta, NO storage)
@@ -96,7 +131,7 @@ src/
     gemini-body.ts       v0.2.0 pure Gemini wire builders/extractors (thinking level-only, JSON mode, extractText drops thought:true, pngDimensions)
     openrouter.ts        v0.2.0 createOpenRouterProvider (ChatModel; stream:false generate + single-chunk streamChat) + toOpenRouterBody
     memory-token-cache.ts v0.2.0 MemoryTokenCache (pure in-memory TokenCache default)
-    index.ts             adapters barrel — the "./adapters/cloudflare" subpath (re-exports the new factories + MemoryTokenCache)
+    index.ts             adapters EVERYTHING barrel — the "./adapters" subpath (all adapter factories + MemoryTokenCache)
 test/               bun:test — mock, cloudflare (+ SSE + hooks), egress, contract (stream-helper + error-philosophy), gemini, openrouter, registry
                     + zod-mirror.type-test.ts (typecheck-only types.ts<->zod.ts drift guard; NOT executed by `bun test`)
 etc/                llm-kit.api.md — AUTHORITATIVE frozen surface report (generated by @microsoft/api-extractor; `bun run api:check` asserts no drift)
