@@ -98,9 +98,32 @@ its own contracts at the boundary.
 >    cross-chunk `\r\n` splits handled. One deliberate leniency drop: `[DONE]`
 >    must now match exactly after the spec's one-leading-space strip (the old
 >    whole-frame `.trim()` is gone).
+>
+> **v0.3.0 (Cloudflare goes multimodal — one REVISED chat-mapping invariant):**
+> 1. Both Cloudflare factories now implement **`VisionModel`** (return type
+>    `LlmProvider & VisionModel`, still `ProviderFactory`-compatible).
+>    `analyze()` is thin sugar over the factory's own `generate` — a one-turn
+>    `[{inlineData}, {text}]` ChatRequest — so the hooks pipeline (max_tokens
+>    default, `extraChatInput`, gateway pinning, retry) applies to vision
+>    identically; `analysis` uses the same lenient `safeJson` policy as Gemini
+>    (now shared from `adapters/json.ts`). `VisionRequest.thinking` is dropped
+>    (no Workers AI knob; reasoning suppression stays an `extraChatInput`
+>    concern). Workers AI may return JSON-mode `response` as an object —
+>    `extractWorkersAiText` stringifies, `analyze` re-parses (measured).
+> 2. **REVISED [inv39]**: the parts→messages mapping no longer downgrades an
+>    `{inlineData}` part to the `[image]` placeholder. A turn carrying any image
+>    becomes the OpenAI-compat content-part array (`{type:"image_url",
+>    image_url:{url:"data:<mime>;base64,<data>"}}`, measured working on Workers
+>    AI vision models, e.g. `@cf/meta/llama-4-scout-17b-16e-instruct`);
+>    **text-only turns keep the flat-string content byte-identically**, so
+>    text-model callers are unaffected. A consumer that (incorrectly) sent
+>    images to a text-only Workers AI model now gets the model's own input
+>    error instead of a silent `[image]` degrade.
 
-Behavior is **preserved from habibi**, not redesigned. The source files name the
-habibi originals they extract.
+Behavior is **preserved from habibi**, not redesigned (v0.3.0's Cloudflare
+vision is the first capability habibi never had — it follows the Gemini
+adapter's analyze contract instead). The source files name the habibi originals
+they extract.
 
 ## Layout (hexagonal)
 

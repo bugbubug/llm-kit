@@ -38,6 +38,7 @@ import {
   geminiTransportFromContext,
   type GeminiTransport,
 } from "./gemini-transport.js";
+import { safeJson } from "./json.js";
 
 /** Construction options: override the transport (offline tests) / fetch / clock. */
 export interface GeminiProviderOptions {
@@ -45,14 +46,6 @@ export interface GeminiProviderOptions {
   transport?: GeminiTransport;
   fetchImpl?: typeof fetch;
   now?: () => number;
-}
-
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { raw: text };
-  }
 }
 
 /**

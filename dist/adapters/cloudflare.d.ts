@@ -1,6 +1,6 @@
-import type { ProviderFactory } from "../ports.js";
+import type { LlmProvider, ProviderContext, ProviderHooks, VisionModel } from "../ports.js";
 export { cloudflareHooks } from "./cloudflare-hooks.js";
-export declare const createCloudflareProvider: ProviderFactory;
+export declare const createCloudflareProvider: (ctx: ProviderContext, hooks: ProviderHooks) => LlmProvider & VisionModel;
 /**
  * v0.2.0 — Cloudflare Workers AI provider whose generate() is a NATIVE
  * `stream:false` single JSON `ai.run` (NO SSE aggregation), and whose
@@ -8,5 +8,5 @@ export declare const createCloudflareProvider: ProviderFactory;
  * count/dim self-checks as the streaming provider. The existing
  * createCloudflareProvider is NOT modified.
  */
-export declare const createCloudflareNonStreamingProvider: ProviderFactory;
+export declare const createCloudflareNonStreamingProvider: (ctx: ProviderContext, hooks: ProviderHooks) => LlmProvider & VisionModel;
 //# sourceMappingURL=cloudflare.d.ts.map

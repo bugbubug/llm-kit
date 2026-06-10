@@ -74,9 +74,10 @@ interface InlineData { mimeType: string; data: string } // data = base64, no `da
 
 Base64-encoded inline bytes (Gemini-shaped). Vision **input** is now real: the
 Gemini adapter (`VisionRequest.image`, and `{ inlineData }` parts in `ChatMessage`)
-passes it through to the model as a genuine image part. The text-only Workers AI /
-OpenRouter chat adapters still flatten an `{ inlineData }` part to the literal
-`[image]` marker (their upstreams are text-only); the mock echo drops it.
+passes it through to the model as a genuine image part, and the Cloudflare
+adapters (v0.3.0) send it as a base64 `data:` URL in the OpenAI-compat
+content-part array. The text-only OpenRouter chat adapter still flattens an
+`{ inlineData }` part to the literal `[image]` marker; the mock echo drops it.
 
 ### `Part`
 
@@ -733,7 +734,7 @@ const llm = reg.create("cloudflare", buildCtx(env), cloudflareHooks);
 ### `createCloudflareProvider`
 
 ```ts
-const createCloudflareProvider: ProviderFactory; // (ctx, hooks) => LlmProvider, name === "cloudflare"
+const createCloudflareProvider: (ctx, hooks) => LlmProvider & VisionModel; // ProviderFactory-compatible, name === "cloudflare"
 ```
 
 The genuine egress adapter over the Workers AI binding (via AI Gateway).
@@ -757,10 +758,14 @@ The genuine egress adapter over the Workers AI binding (via AI Gateway).
     the call).
   Then pipes the returned `ReadableStream` through `parseSseFrames` →
   `normalizeStream(rawFrames, hooks)` and returns the normalized iterable.
-- **Parts → flat Workers AI messages**: `req.system` (if present) is prepended as a
-  `{ role:"system" }` message; each `ChatMessage`'s parts join to a string where a
-  `{text}` part contributes its text and an `{inlineData}` part contributes the
-  literal marker `[image]`; `user`/`assistant` roles pass through.
+- **Parts → Workers AI messages** *(REVISED v0.3.0)*: `req.system` (if present) is
+  prepended as a `{ role:"system" }` message; `user`/`assistant` roles pass
+  through. A **text-only** turn keeps the flat-string `content` (byte-identical
+  to pre-v0.3.0 — text models reject part arrays); a turn carrying **any**
+  `{inlineData}` part becomes the OpenAI-compat content-part array
+  (`{type:"text"}` / `{type:"image_url", image_url:{url:"data:<mime>;base64,<data>"}}`),
+  measured working on Workers AI vision models (e.g. llama-4-scout). The
+  pre-v0.3.0 `[image]` placeholder downgrade is gone — images are really sent.
 - **`embed`** — `ai.run(model || ctx.embedModel, { text: input }, options?)`
   (same conditional gateway options; the whole call wrapped in `withRetry`;
   Workers AI's embedding input key is `text`, not OpenAI's `input`). Then:
@@ -771,6 +776,17 @@ The genuine egress adapter over the Workers AI binding (via AI Gateway).
     `data[0]` is correct but `data[1]` is wrong is rejected.
   - returns `resp.data` unchanged when count and all dims are valid.
 - **`generate`** — `aggregateStream(streamChat(req))`.
+- **`analyze`** *(v0.3.0 — both Cloudflare factories implement `VisionModel`)* —
+  thin sugar over the factory's own `generate`: maps the `VisionRequest` to a
+  one-turn multimodal `ChatRequest` (`[{inlineData: image}, {text: prompt}]`,
+  image first — mirroring the Gemini adapter's part order), so every channel
+  quirk the hooks absorb (max_tokens default, `extraChatInput`, gateway
+  pinning, retry) applies to vision identically. `analysis` is
+  `safeJson(text)` when `req.responseJson` (lenient — unparseable prose wraps
+  as `{ raw }`, same policy as Gemini), else the raw text; `usage` flows
+  through. `VisionRequest.thinking` is **dropped** (Workers AI exposes no
+  cross-model reasoning knob; reasoning-model suppression stays an
+  `extraChatInput` hook concern keyed on the model id).
 
 ### `cloudflareHooks`
 
@@ -794,11 +810,11 @@ const cloudflareHooks: ProviderHooks;
 ### `createCloudflareNonStreamingProvider`  *(v0.2.0)*
 
 ```ts
-const createCloudflareNonStreamingProvider: ProviderFactory; // name === "cloudflare"
+const createCloudflareNonStreamingProvider: (ctx, hooks) => LlmProvider & VisionModel; // ProviderFactory-compatible, name === "cloudflare"
 ```
 
 A second Workers AI factory whose `generate()` is a **NATIVE `stream:false` single
-JSON `ai.run`** (no SSE aggregation): it builds the same flat Workers AI messages +
+JSON `ai.run`** (no SSE aggregation): it builds the same Workers AI messages +
 the same `responseJson` / `extraChatInput` spreads with `stream:false`, then
 extracts the text (`{ response }`, or a stringified non-string `response`, or
 OpenAI-compatible `choices[0].message.content`) and a numeric `usage` map (when the
@@ -807,7 +823,10 @@ model reported one). Its `streamChat` yields that whole text as **one chunk**.
 provider; missing `ctx.ai` → `LlmKitError("missing_binding")`. The `generate`
 and `embed` runs are wrapped in `withRetry` and use the same conditional
 gateway options (omitted when `ctx.gatewayId` is unset) as the streaming
-factory (v0.2.5). **The existing
+factory (v0.2.5). `analyze` (v0.3.0) rides this factory's native non-streaming
+`generate` — see the `analyze` bullet above; the JSON-mode `response` may come
+back as an **object**, which `extractWorkersAiText` stringifies and `analyze`
+re-parses (measured Workers AI behavior). **The existing
 `createCloudflareProvider` is UNCHANGED** — its `generate` still aggregates the SSE
 stream. Off the core barrel; surfaced on `@bugbubug/llm-kit/adapters/cloudflare`.
 

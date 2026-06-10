@@ -267,10 +267,18 @@ describe("cloudflare provider — streamChat egress mapping", () => {
     expect(input.temperature).toBe(0.7);
     // [inv42] GLM → enable_thinking:false injected (shallow-merged)
     expect(input.chat_template_kwargs).toEqual({ enable_thinking: false });
-    // [inv39] parts → flat messages: system prepended; {text}+{inlineData}→"[image]"; roles pass through
+    // [inv39 — REVISED v0.3.0] parts → WAI messages: system prepended; a turn
+    // carrying an image becomes the OpenAI-compat content-part array (data: URL,
+    // no "[image]" placeholder anymore); text-only turns stay flat strings.
     expect(input.messages).toEqual([
       { role: "system", content: "be kind" },
-      { role: "user", content: "look [image]" },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "look " },
+          { type: "image_url", image_url: { url: "data:image/png;base64,QQ==" } },
+        ],
+      },
       { role: "assistant", content: "ok" },
     ]);
     // [inv33] collectLogPayload:false anonymity default on the gateway object
@@ -674,5 +682,113 @@ describe("cloudflare provider — gateway option omitted when ctx.gatewayId is u
     );
     await provider.generate(chatReq());
     expect((run.mock.calls[0] as unknown as RunCall)[2]).toBeUndefined();
+  });
+});
+
+describe("cloudflare provider — VisionModel.analyze (v0.3.0)", () => {
+  const IMG = { mimeType: "image/png", data: "QQ==" };
+
+  test("[inv54] analyze (non-streaming) — one user turn [image, prompt]; responseJson → response_format; hooks max_tokens default applies", async () => {
+    const run = mock(async () => ({
+      response: { dominantColor: "red" },
+      usage: { prompt_tokens: 9, completion_tokens: 4 },
+    }));
+    const provider = createCloudflareNonStreamingProvider(
+      ctx({ ai: { run: run as never }, chatModel: "@cf/meta/llama-4-scout-17b-16e-instruct" }),
+      cloudflareHooks,
+    );
+    const res = await provider.analyze({
+      model: "",
+      image: IMG,
+      prompt: "What color?",
+      responseJson: true,
+    });
+    const [model, input, options] = run.mock.calls[0] as unknown as [
+      string,
+      Record<string, unknown>,
+      unknown,
+    ];
+    expect(model).toBe("@cf/meta/llama-4-scout-17b-16e-instruct");
+    expect(input.stream).toBe(false);
+    expect(input.max_tokens).toBe(1536); // cloudflareHooks default rides the same path
+    expect(input.response_format).toEqual({ type: "json_object" });
+    expect(input.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: "data:image/png;base64,QQ==" } },
+          { type: "text", text: "What color?" },
+        ],
+      },
+    ]);
+    expect(options).toEqual({ gateway: { id: "default", collectLogPayload: false } });
+    // Workers AI returns the JSON-mode `response` as an object → stringified by
+    // extractWorkersAiText → re-parsed by analyze's safeJson.
+    expect(res.analysis).toEqual({ dominantColor: "red" });
+    expect(res.usage).toEqual({ prompt_tokens: 9, completion_tokens: 4 });
+  });
+
+  test("[inv55] analyze responseJson:false → raw text analysis (no response_format)", async () => {
+    const run = mock(async () => ({ response: "a salmon-pink square" }));
+    const provider = createCloudflareNonStreamingProvider(
+      ctx({ ai: { run: run as never } }),
+      cloudflareHooks,
+    );
+    const res = await provider.analyze({ model: "m", image: IMG, prompt: "Describe." });
+    const [, input] = run.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect("response_format" in input).toBe(false);
+    expect(res.analysis).toBe("a salmon-pink square");
+  });
+
+  test("[inv56] analyze lenient JSON — prose under responseJson:true wraps as { raw }", async () => {
+    const provider = createCloudflareNonStreamingProvider(
+      ctx({ ai: { run: async () => ({ response: "not json, sorry" }) } }),
+      cloudflareHooks,
+    );
+    const res = await provider.analyze({
+      model: "m",
+      image: IMG,
+      prompt: "JSON please",
+      responseJson: true,
+    });
+    expect(res.analysis).toEqual({ raw: "not json, sorry" });
+  });
+
+  test("[inv57] analyze on the STREAMING factory aggregates SSE to one analysis", async () => {
+    const run = mock(async () =>
+      streamOf(['data: {"response":"{\\"ok\\":"}\n\n', 'data: {"response":"true}"}\n\n']),
+    );
+    const provider = createCloudflareProvider(ctx({ ai: { run: run as never } }), cloudflareHooks);
+    const res = await provider.analyze({
+      model: "m",
+      image: IMG,
+      prompt: "JSON please",
+      responseJson: true,
+    });
+    const [, input] = run.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(input.stream).toBe(true);
+    expect(res.analysis).toEqual({ ok: true });
+  });
+
+  test("[inv58] text-only chat keeps the flat-string content (pre-v0.3.0 byte-identical regression)", async () => {
+    const run = mock(async () => ({ response: "ok" }));
+    const provider = createCloudflareNonStreamingProvider(
+      ctx({ ai: { run: run as never } }),
+      cloudflareHooks,
+    );
+    await provider.generate({
+      model: "m",
+      system: "s",
+      messages: [
+        { role: "user", parts: [{ text: "a" }, { text: "b" }] },
+        { role: "assistant", parts: [{ text: "c" }] },
+      ],
+    });
+    const [, input] = run.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(input.messages).toEqual([
+      { role: "system", content: "s" },
+      { role: "user", content: "ab" },
+      { role: "assistant", content: "c" },
+    ]);
   });
 });

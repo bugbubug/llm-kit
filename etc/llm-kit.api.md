@@ -81,7 +81,7 @@ export type ChatRole = "user" | "assistant";
 export const cloudflareHooks: ProviderHooks;
 
 // @public (undocumented)
-export const createCloudflareProvider: ProviderFactory;
+export const createCloudflareProvider: (ctx: ProviderContext, hooks: ProviderHooks) => LlmProvider & VisionModel;
 
 // @public
 export function createMockImageModel(options?: {

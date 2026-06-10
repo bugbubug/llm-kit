@@ -1,13 +1,6 @@
 import { buildTextBody, buildVisionBody, extractText, usageOf, } from "./gemini-body.js";
 import { geminiTransportFromContext, } from "./gemini-transport.js";
-function safeJson(text) {
-    try {
-        return JSON.parse(text);
-    }
-    catch {
-        return { raw: text };
-    }
-}
+import { safeJson } from "./json.js";
 /**
  * Build a Gemini text + vision adapter. The transport (Vertex vs Developer API)
  * is selected from `ctx` (the consumer's channel choice), or injected via opts.

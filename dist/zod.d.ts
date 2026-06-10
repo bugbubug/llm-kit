@@ -239,11 +239,11 @@ export declare const ChatRequestSchema: z.ZodObject<{
     model: string;
     stream?: boolean | undefined;
     system?: string | undefined;
+    responseJson?: boolean | undefined;
     temperature?: number | undefined;
     purpose?: "chat" | "memory-extract" | undefined;
     maxTokens?: number | undefined;
     thinking?: "minimal" | "low" | "medium" | "high" | undefined;
-    responseJson?: boolean | undefined;
     mockRef?: string | undefined;
 }, {
     messages: {
@@ -260,11 +260,11 @@ export declare const ChatRequestSchema: z.ZodObject<{
     model: string;
     stream?: boolean | undefined;
     system?: string | undefined;
+    responseJson?: boolean | undefined;
     temperature?: number | undefined;
     purpose?: "chat" | "memory-extract" | undefined;
     maxTokens?: number | undefined;
     thinking?: "minimal" | "low" | "medium" | "high" | undefined;
-    responseJson?: boolean | undefined;
     mockRef?: string | undefined;
 }>;
 /** Streaming-normalized chunk. Errors are DATA here, never thrown. Mirrors `StreamChunk`. */
@@ -334,8 +334,8 @@ export declare const VisionRequestSchema: z.ZodObject<{
         mimeType: string;
     };
     prompt: string;
-    thinking?: "minimal" | "low" | "medium" | "high" | undefined;
     responseJson?: boolean | undefined;
+    thinking?: "minimal" | "low" | "medium" | "high" | undefined;
     mockRef?: string | undefined;
 }, {
     model: string;
@@ -344,8 +344,8 @@ export declare const VisionRequestSchema: z.ZodObject<{
         mimeType: string;
     };
     prompt: string;
-    thinking?: "minimal" | "low" | "medium" | "high" | undefined;
     responseJson?: boolean | undefined;
+    thinking?: "minimal" | "low" | "medium" | "high" | undefined;
     mockRef?: string | undefined;
 }>;
 /** Generic image-understanding response. Mirrors `VisionResponse`. */

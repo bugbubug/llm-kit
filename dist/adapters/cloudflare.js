@@ -1,4 +1,5 @@
 import { LlmKitError } from "../errors.js";
+import { safeJson } from "./json.js";
 import { parseSseFrames } from "../sse.js";
 import { aggregateStream, normalizeStream, withRetry } from "../stream.js";
 // The full documented cloudflare surface lives on THIS module (the
@@ -35,26 +36,69 @@ function validateEmbedResponse(resp, inputCount, expectedDims) {
     }
     return data;
 }
-/** Flatten one neutral ChatMessage's parts → a Workers AI flat content string. */
-function flattenParts(parts) {
-    return parts.map((p) => ("text" in p ? p.text : "[image]")).join("");
+/**
+ * One turn's parts → Workers AI content. A text-only turn keeps the flat-string
+ * join (byte-identical to pre-v0.3.0 — text models reject part arrays); a turn
+ * with any `{inlineData}` part becomes the OpenAI-compat part array, with the
+ * image inlined as a base64 `data:` URL.
+ */
+function toWaiContent(parts) {
+    if (parts.every((p) => "text" in p)) {
+        return parts.map((p) => ("text" in p ? p.text : "")).join("");
+    }
+    return parts.map((p) => "text" in p
+        ? { type: "text", text: p.text }
+        : {
+            type: "image_url",
+            image_url: {
+                url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}`,
+            },
+        });
 }
 /**
- * Map the neutral parts IR → flat Workers AI messages. `req.system` (if present)
- * is prepended as a `{role:'system'}` message; each ChatMessage's parts are
- * flattened with `{text}` contributing its text and `{inlineData}` the `[image]`
- * marker; role (user/assistant) passes through.
+ * Map the neutral parts IR → Workers AI messages. `req.system` (if present) is
+ * prepended as a `{role:'system'}` message; each ChatMessage's parts map via
+ * {@link toWaiContent}; role (user/assistant) passes through.
  */
 function toWorkersAiMessages(req) {
     const messages = [];
     if (req.system)
         messages.push({ role: "system", content: req.system });
     for (const m of req.messages) {
-        messages.push({ role: m.role, content: flattenParts(m.parts) });
+        messages.push({ role: m.role, content: toWaiContent(m.parts) });
     }
     return messages;
 }
-export const createCloudflareProvider = (ctx, hooks) => {
+/**
+ * VisionRequest → the equivalent one-turn multimodal ChatRequest (image first,
+ * then the prompt text — mirroring buildVisionBody's part order on the Gemini
+ * adapter). `thinking` is deliberately dropped (no Workers AI knob); `mockRef`
+ * is a real-provider no-op by contract.
+ */
+function visionChatRequest(req) {
+    return {
+        model: req.model,
+        messages: [
+            { role: "user", parts: [{ inlineData: req.image }, { text: req.prompt }] },
+        ],
+        ...(req.responseJson !== undefined ? { responseJson: req.responseJson } : {}),
+    };
+}
+/**
+ * Build `analyze` over a factory's own `generate` so vision rides the exact
+ * same egress path (hooks, gateway, retry, usage extraction) as chat. JSON is
+ * parsed leniently ({@link safeJson}) — same policy as the Gemini adapter.
+ */
+function makeAnalyze(generate) {
+    return async (req) => {
+        const r = await generate(visionChatRequest(req));
+        return {
+            analysis: req.responseJson ? safeJson(r.text) : r.text,
+            ...(r.usage ? { usage: r.usage } : {}),
+        };
+    };
+}
+export const createCloudflareProvider = ((ctx, hooks) => {
     const ai = ctx.ai;
     if (!ai) {
         // A config fault, never a stream {error}. The consumer's fetch handler must
@@ -109,14 +153,15 @@ export const createCloudflareProvider = (ctx, hooks) => {
         // choices[0].delta.content); recoverable upstream errors surface as {error} chunks.
         yield* normalizeStream(rawFrames, hooks);
     };
+    // generate seam: aggregate streamChat into one string (identical text to
+    // manual token concatenation of the stream). Hoisted as a local so analyze
+    // can ride the same path.
+    const generate = async (req) => aggregateStream(streamChat(req));
     const provider = {
         name: "cloudflare",
         streamChat,
-        async generate(req) {
-            // generate seam: aggregate streamChat into one string (identical text to
-            // manual token concatenation of the stream).
-            return aggregateStream(streamChat(req));
-        },
+        generate,
+        analyze: makeAnalyze(generate),
         async embed(req) {
             const r = hooks.rewriteEmbed?.(req, ctx) ?? req;
             const resp = await withRetry(() => ai.run(r.model || ctx.embedModel, { text: r.input }, runOptions), hooks);
@@ -124,7 +169,7 @@ export const createCloudflareProvider = (ctx, hooks) => {
         },
     };
     return provider;
-};
+});
 /* ── v0.2.0: native non-streaming Workers AI factory (ADDITIVE) ──────────────
  * `createCloudflareProvider` above is UNCHANGED (its generate() still
  * aggregates streamChat over the SSE stream, so cloudflare.test.ts stays green).
@@ -176,7 +221,7 @@ function extractWorkersAiUsage(out) {
  * count/dim self-checks as the streaming provider. The existing
  * createCloudflareProvider is NOT modified.
  */
-export const createCloudflareNonStreamingProvider = (ctx, hooks) => {
+export const createCloudflareNonStreamingProvider = ((ctx, hooks) => {
     const ai = ctx.ai;
     if (!ai) {
         throw new LlmKitError("missing_binding", "cloudflare provider requires the Workers AI binding (ctx.ai / env.AI)");
@@ -208,11 +253,12 @@ export const createCloudflareNonStreamingProvider = (ctx, hooks) => {
         name: "cloudflare",
         streamChat,
         generate,
+        analyze: makeAnalyze(generate),
         async embed(req) {
             const r = hooks.rewriteEmbed?.(req, ctx) ?? req;
             const resp = await withRetry(() => aiBinding.run(r.model || ctx.embedModel, { text: r.input }, runOptions), hooks);
             return validateEmbedResponse(resp, r.input.length, ctx.embeddingDims);
         },
     };
-};
+});
 //# sourceMappingURL=cloudflare.js.map
