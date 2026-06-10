@@ -66,8 +66,7 @@ its own contracts at the boundary.
 > so a rejecting cancel on an errored/aborted stream can't escape as an unhandled
 > rejection that terminates a workerd request.
 >
-> **v0.2.5-dev (UNRELEASED — committed after v0.2.4, not yet tagged; frozen root
-> surface unchanged, behavior/packaging only):**
+> **v0.2.5 (behavior/packaging only — frozen root surface unchanged):**
 > 1. `featureHashEmbed` tokenizes via Unicode property escapes
 >    (`/[^\p{L}\p{N}]+/u`) — Arabic/Cyrillic/kana/Hangul now produce real tokens
 >    instead of the all-zero vector (the old `/[^a-z0-9一-鿿]+/u` silently broke
@@ -238,7 +237,7 @@ IR (a drift fails `bun run typecheck`).
 
 ## How a consumer wires it
 
-Installs by **git tag** (`pnpm add github:bugbubug/llm-kit#v0.2.4`) and consumes
+Installs by **git tag** (`pnpm add github:bugbubug/llm-kit#v0.2.5`) and consumes
 the committed **`dist/` (ESM `.js` + `.d.ts`)** — its `tsc` reads the shipped
 `.d.ts` (the kit's strictness never leaks into the consumer's typecheck), its
 bundler (wrangler/esbuild) bundles the `.js`. Rebuild `dist` with `bun run build`

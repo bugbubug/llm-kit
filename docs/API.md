@@ -1,4 +1,4 @@
-# API reference — @bugbubug/llm-kit (v0.2.5-dev)
+# API reference — @bugbubug/llm-kit (v0.2.5)
 
 The authoritative surface is the **API Extractor** report
 [`etc/llm-kit.api.md`](../etc/llm-kit.api.md), generated from `src/index.ts`'s
@@ -8,9 +8,8 @@ export with its semantics + a short usage snippet. The contract is
 v0.1.0 — every change is a new optional field or a new type/value/subpath export,
 so a consumer pinned to v0.1.0 (habibi) is unaffected. v0.2.1 keeps the v0.2.0
 **surface identical**; it is a behavior-only change (the mock's `generate()`
-returns resolver fixtures verbatim + a `usage:{mock:1}` marker). v0.2.5-dev
-(unreleased) keeps the frozen root surface identical again — it is a
-behavior/packaging pass: Unicode tokenization in `featureHashEmbed`,
+returns resolver fixtures verbatim + a `usage:{mock:1}` marker). v0.2.5 keeps
+the frozen root surface identical again — it is a behavior/packaging pass: Unicode tokenization in `featureHashEmbed`,
 `hooks.retry` actually honored by the Cloudflare factories, the AI Gateway
 option omitted when `ctx.gatewayId` is unset, a spec-correct line-based SSE
 parser, and the `./adapters/cloudflare` subpath narrowed to the cloudflare-only
@@ -51,7 +50,7 @@ ports + the stream/egress/embed helpers + the mock factories
 factories, the OpenRouter factory, `MemoryTokenCache`) and the
 `toProviderJsonSchema` helper are deliberately kept **OFF** the core barrel — they
 live only on the `./adapters`/`./adapters/*` and `./zod` subpaths, so the core
-import-graph stays adapter-free and zod-free. Since v0.2.5-dev,
+import-graph stays adapter-free and zod-free. Since v0.2.5,
 `@bugbubug/llm-kit/adapters/cloudflare` maps to the cloudflare module ONLY
 (`createCloudflareProvider` / `createCloudflareNonStreamingProvider` /
 `cloudflareHooks`) so a cloudflare-only Worker never bundles the
@@ -433,7 +432,7 @@ no-retry.
   `undefined` = skip this frame.
 - **`retry`** — a retry wrapper for the embed / pre-stream connection phase only
   (a stream cannot be safely retried once it begins). Absent = run once. Honored
-  (v0.2.5-dev) by **both Cloudflare factories** — the streaming factory's
+  (v0.2.5) by **both Cloudflare factories** — the streaming factory's
   connect-phase `ai.run`, the non-streaming factory's `generate` run, and both
   `embed`s. The Gemini/OpenRouter factories take no hooks, so `retry` does not
   apply to them.
@@ -479,7 +478,7 @@ function parseSseFrames(stream: ReadableStream<Uint8Array>): AsyncIterable<unkno
 ```
 
 Reads an SSE `ReadableStream` with a spec-correct (WHATWG) **line-based** parser
-(v0.2.5-dev; same signature and frozen semantics as the original `\n\n` splitter)
+(v0.2.5; same signature and frozen semantics as the original `\n\n` splitter)
 and yields the JSON-parsed `data` payload of each dispatched frame.
 
 - **Line terminators**: `\r\n`, `\n`, and lone `\r` are all accepted — a CRLF
@@ -540,7 +539,7 @@ function withRetry<T>(fn: () => Promise<T>, hooks: ProviderHooks): Promise<T>;
 Runs `fn` exactly once when `hooks.retry` is absent. When given, attempts up to
 `maxAttempts`, rethrows immediately on the last attempt or when `isRetryable(e)`
 is false, and sleeps `backoffMs(attempt)` between retryable attempts. For the
-embed / pre-stream connection phase only. Since v0.2.5-dev the Cloudflare
+embed / pre-stream connection phase only. Since v0.2.5 the Cloudflare
 factories call this around every `ai.run` (stream connect / non-streaming
 generate / embed), so a consumer-supplied `hooks.retry` is actually honored.
 
@@ -617,7 +616,7 @@ A deterministic feature-hashed embedding (used by the mock; exported for reuse).
   (FNV-1a 32-bit hash via `Math.imul`).
 - Tokenizes by lowercasing then splitting on `/[^\p{L}\p{N}]+/u` (Unicode
   property escapes — Latin, CJK, **Arabic**, Cyrillic, kana, Hangul, … all
-  tokenize; v0.2.5-dev, previously `/[^a-z0-9一-鿿]+/u` which embedded Arabic
+  tokenize; v0.2.5, previously `/[^a-z0-9一-鿿]+/u` which embedded Arabic
   text to the all-zero vector), dropping empty tokens. Underscores, punctuation
   and whitespace are separators.
 - Accumulates each token at slot `hash % dims` with a sign from the hash's high
@@ -753,7 +752,7 @@ The genuine egress adapter over the Workers AI binding (via AI Gateway).
     keys.
   - `options = { gateway: { id: ctx.gatewayId, collectLogPayload: false } }`
     when `ctx.gatewayId` is set (the anonymity default; consumer-overridable);
-    when it is **unset the third arg is OMITTED entirely** (v0.2.5-dev —
+    when it is **unset the third arg is OMITTED entirely** (v0.2.5 —
     previously an empty `{ id: "" }` was sent, which can make Workers AI reject
     the call).
   Then pipes the returned `ReadableStream` through `parseSseFrames` →
@@ -808,7 +807,7 @@ model reported one). Its `streamChat` yields that whole text as **one chunk**.
 provider; missing `ctx.ai` → `LlmKitError("missing_binding")`. The `generate`
 and `embed` runs are wrapped in `withRetry` and use the same conditional
 gateway options (omitted when `ctx.gatewayId` is unset) as the streaming
-factory (v0.2.5-dev). **The existing
+factory (v0.2.5). **The existing
 `createCloudflareProvider` is UNCHANGED** — its `generate` still aggregates the SSE
 stream. Off the core barrel; surfaced on `@bugbubug/llm-kit/adapters/cloudflare`.
 
